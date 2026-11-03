@@ -1,0 +1,1231 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#080b10">
+<title>RemoteShellBot</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Cpath d='M8 11l6 5-6 5' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M16 21h8' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #080b10;
+    --bg-soft: #0d1118;
+    --panel: #111721;
+    --panel-raised: #151d29;
+    --panel-hover: #1a2432;
+    --text: #e8eef6;
+    --muted: #8b98a9;
+    --muted-strong: #aab6c6;
+    --border: #232e3d;
+    --border-soft: #1a2330;
+    --accent: #3b82f6;
+    --accent-soft: rgba(59, 130, 246, .14);
+    --accent-line: rgba(59, 130, 246, .45);
+    --ok: #34d399;
+    --ok-soft: rgba(52, 211, 153, .12);
+    --warn: #fbbf24;
+    --warn-soft: rgba(251, 191, 36, .12);
+    --danger: #f87171;
+    --danger-soft: rgba(248, 113, 113, .12);
+    --radius: 14px;
+    --shadow: 0 18px 50px rgba(0, 0, 0, .35);
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+
+  html, body { min-height: 100%; }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(59, 130, 246, .10), transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, rgba(45, 212, 191, .06), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font: 14px/1.55 "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, p { margin: 0; }
+  button, input { font: inherit; }
+  code, pre { font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace; }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--border-soft);
+    background: rgba(8, 11, 16, .82);
+    backdrop-filter: blur(14px);
+  }
+
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+
+  .brand-mark {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    border-radius: 11px;
+    background: linear-gradient(135deg, #3b82f6, #0ea5a4);
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: .03em;
+    box-shadow: 0 6px 20px rgba(59, 130, 246, .28);
+  }
+
+  .brand-text { min-width: 0; }
+  .brand-text h1 { font-size: 17px; font-weight: 600; letter-spacing: .01em; }
+  .brand-text p {
+    margin-top: 1px;
+    color: var(--muted);
+    font-size: 12.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 58vw;
+  }
+
+  .topbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+  .updated { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+  .shell { max-width: 1240px; margin: 0 auto; padding: 22px 20px 72px; }
+
+  .panel {
+    background: linear-gradient(180deg, var(--panel), #0f141c);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+  }
+
+  .panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .panel-head h2, .panel h2 { font-size: 14.5px; font-weight: 600; letter-spacing: .015em; }
+
+  .muted { color: var(--muted); }
+  .small { font-size: 12.5px; }
+  .error { color: var(--danger); font-size: 13px; }
+  .ok { color: var(--ok); }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .stat {
+    background: linear-gradient(180deg, var(--panel), #0f141c);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 13px 15px;
+    min-width: 0;
+  }
+
+  .stat-label {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+
+  .stat-value {
+    display: block;
+    margin-top: 5px;
+    font-size: 18px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .stat-value.ok { color: var(--ok); }
+  .stat-value.warn { color: var(--warn); }
+  .stat-value.bad { color: var(--danger); }
+
+  .notice {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    padding: 11px 14px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    background: rgba(59, 130, 246, .06);
+    color: var(--muted-strong);
+    font-size: 12.5px;
+  }
+  .notice-dot {
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 336px;
+    gap: 18px;
+    align-items: start;
+  }
+
+  .stack { display: grid; gap: 18px; }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 10px;
+    color: var(--muted-strong);
+    background: rgba(255, 255, 255, .02);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .pill.ok { color: var(--ok); border-color: rgba(52, 211, 153, .38); background: var(--ok-soft); }
+  .pill.warn { color: var(--warn); border-color: rgba(251, 191, 36, .38); background: var(--warn-soft); }
+  .pill.bad { color: var(--danger); border-color: rgba(248, 113, 113, .38); background: var(--danger-soft); }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 8px 14px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, opacity .15s ease, transform .1s ease;
+  }
+
+  .btn:hover { background: #4b8ef8; }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: .45; cursor: default; transform: none; }
+
+  .btn.ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .btn.ghost:hover { background: var(--panel-hover); }
+
+  .btn.danger { background: var(--danger); color: #1a0a0a; font-weight: 600; }
+  .btn.danger:hover { background: #fca5a5; }
+
+  .btn.outline-danger {
+    background: transparent;
+    border-color: rgba(248, 113, 113, .4);
+    color: var(--danger);
+  }
+  .btn.outline-danger:hover { background: var(--danger-soft); }
+
+  .btn.mini { padding: 4px 9px; font-size: 12px; border-radius: 7px; }
+  .icon-btn {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: transparent;
+    color: var(--muted-strong);
+    cursor: pointer;
+  }
+  .icon-btn:hover { background: var(--panel-hover); color: var(--text); }
+
+  .list { display: grid; gap: 10px; }
+
+  .card {
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 15px;
+  }
+  .card:hover { border-color: #2c3a4d; }
+
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .identity { display: flex; align-items: center; gap: 11px; min-width: 0; }
+  .avatar {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    border-radius: 10px;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+    color: #bfdbfe;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .identity-text { min-width: 0; }
+  .identity-text strong { display: block; font-size: 13.5px; font-weight: 600; }
+  .identity-text span { display: block; color: var(--muted); font-size: 12px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cap {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--accent-line);
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: #bfdbfe;
+    padding: 2px 9px;
+    font-size: 11.5px;
+  }
+  .cap.off { border-color: var(--border); background: transparent; color: var(--muted); }
+
+  .meta-row { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 9px; color: var(--muted); font-size: 12.5px; }
+  .meta-row code { color: var(--muted-strong); }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
+  .actions.end { justify-content: flex-end; margin-top: 0; }
+
+  .caps { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+
+  .cap-toggle { position: relative; display: inline-flex; }
+  .cap-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+  .cap-toggle span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted-strong);
+    font-size: 12.5px;
+    cursor: pointer;
+    user-select: none;
+    transition: all .15s ease;
+  }
+  .cap-toggle span::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--border);
+  }
+  .cap-toggle input:checked + span {
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+    color: #dbeafe;
+  }
+  .cap-toggle input:checked + span::before { background: var(--accent); }
+  .cap-toggle input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .cap-toggle input:disabled + span { opacity: .55; cursor: default; }
+
+  .panel-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .dirty { color: var(--warn); font-size: 12px; }
+
+  .empty {
+    display: grid;
+    gap: 4px;
+    padding: 20px 18px;
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    text-align: center;
+  }
+  .empty strong { font-size: 13.5px; font-weight: 600; }
+  .empty span { color: var(--muted); font-size: 12.5px; }
+
+  .command {
+    margin-top: 11px;
+    padding: 10px 0 0 12px;
+    border-left: 2px solid var(--border);
+  }
+  .command-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .command-line code { color: #93c5fd; font-size: 12.5px; word-break: break-word; }
+  .exit { flex: 0 0 auto; font-size: 11px; }
+  .exit.ok { color: var(--ok); }
+  .exit.bad { color: var(--danger); }
+
+  pre {
+    margin: 8px 0 0;
+    padding: 10px 12px;
+    background: #0a0e14;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    color: #cbd5e1;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+    max-height: 260px;
+  }
+
+  .shot { margin: 12px 0 0; }
+  .shot a { display: block; }
+  .shot img {
+    display: block;
+    width: 100%;
+    max-height: 260px;
+    object-fit: cover;
+    object-position: top;
+    border-radius: 9px;
+    border: 1px solid var(--border);
+    background: #0a0e14;
+  }
+  .shot figcaption { margin-top: 6px; color: var(--muted); font-size: 12px; }
+
+  .events { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+  .events li {
+    display: grid;
+    grid-template-columns: 104px minmax(0, 1fr);
+    gap: 10px;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+  .events time { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .events strong { color: var(--muted-strong); font-weight: 500; }
+  .events .event-error strong, .events .event-error { color: var(--danger); }
+
+  .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px 14px; margin: 12px 0 0; font-size: 12.5px; }
+  .facts dt { color: var(--muted); }
+  .facts dd { margin: 0; color: var(--muted-strong); word-break: break-all; }
+  .id-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .id-row code { font-size: 11.5px; color: #93c5fd; }
+
+  .lock { display: grid; place-items: center; min-height: 62vh; padding: 20px; }
+  .lock-card {
+    width: min(460px, 100%);
+    padding: 34px 32px 30px;
+    text-align: center;
+    background: linear-gradient(180deg, var(--panel), #0e131b);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+  }
+  .lock-icon {
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 16px;
+    border-radius: 16px;
+    border: 1px solid var(--accent-line);
+    background: var(--accent-soft);
+    color: #bfdbfe;
+  }
+  .lock-card h2 { font-size: 19px; font-weight: 600; margin-bottom: 8px; }
+  .lock-card p { color: var(--muted); font-size: 13px; }
+  .lock-hint { margin-top: 10px; color: var(--warn); font-size: 12.5px; min-height: 18px; }
+  .unlock-form { display: grid; gap: 10px; margin-top: 18px; text-align: left; }
+
+  input[type=password] {
+    width: 100%;
+    padding: 10px 13px;
+    background: #0a0e14;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    color: var(--text);
+    outline: none;
+  }
+  input[type=password]:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+  .toast {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 60;
+    max-width: min(420px, calc(100vw - 40px));
+    padding: 11px 15px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    background: var(--panel-raised);
+    box-shadow: var(--shadow);
+    font-size: 13px;
+    opacity: 0;
+    transform: translateY(8px);
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .toast.visible { opacity: 1; transform: translateY(0); }
+  .toast.error { border-left-color: var(--danger); }
+  .toast.success { border-left-color: var(--ok); }
+
+  .modal {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(3, 6, 10, .72);
+    backdrop-filter: blur(6px);
+  }
+  .modal-card {
+    width: min(460px, 100%);
+    padding: 22px;
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+  }
+  .modal-card h3 { font-size: 16px; font-weight: 600; margin-bottom: 7px; }
+  .modal-card .actions { margin-top: 18px; justify-content: flex-end; }
+
+  .fatal { max-width: 560px; margin: 12vh auto; padding: 28px; text-align: center; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (max-width: 1020px) {
+    .layout { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  @media (max-width: 680px) {
+    .topbar { padding: 12px 16px; align-items: flex-start; }
+    .shell { padding: 16px 14px 56px; }
+    .brand-text p { max-width: 46vw; }
+    .updated { display: none; }
+    .stats { grid-template-columns: 1fr 1fr; }
+    .events li { grid-template-columns: 1fr; gap: 2px; }
+    .panel { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+      <div class="brand-mark" aria-hidden="true">RS</div>
+    <div class="brand-text">
+      <h1 id="deviceName">RemoteShellBot</h1>
+      <p id="deviceMeta">Загрузка состояния</p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <span id="updatedAt" class="updated"></span>
+    <button id="refreshButton" class="icon-btn" type="button" title="Обновить" aria-label="Обновить">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+        <path d="M21 3v6h-6"></path>
+      </svg>
+    </button>
+    <span id="connBadge" class="pill">relay: проверка</span>
+    <button id="lockButton" class="btn ghost" type="button" hidden>Заблокировать</button>
+  </div>
+</header>
+
+<main class="shell">
+  <section id="lockScreen" class="lock" hidden>
+    <div class="lock-card">
+      <div class="lock-icon" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="10" width="16" height="11" rx="2.5"></rect>
+          <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+          <path d="M12 15v2"></path>
+        </svg>
+      </div>
+      <h2>Панель заблокирована</h2>
+      <p>Введите пароль хоста. Подтверждение запросов и изменение прав недоступны до разблокировки.</p>
+      <p id="lockHint" class="lock-hint"></p>
+      <form id="unlockForm" class="unlock-form">
+        <input type="password" id="passwordInput" autocomplete="current-password" placeholder="Пароль хоста" required>
+        <button class="btn" type="submit">Разблокировать</button>
+      </form>
+      <p id="lockError" class="error" hidden></p>
+    </div>
+  </section>
+
+  <div id="dashboard" hidden>
+    <section id="stats" class="stats"></section>
+    <div class="notice">
+      <span class="notice-dot" aria-hidden="true"></span>
+      <span>Подключение открывается только после вашего подтверждения. Все команды и снимки отображаются в этой панели.</span>
+    </div>
+
+    <div class="layout">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Входящие запросы</h2>
+            <span id="pendingCount" class="pill">0</span>
+          </div>
+          <div id="pendingList" class="list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Активные сессии</h2>
+            <span id="sessionCount" class="pill">0</span>
+          </div>
+          <div id="sessionList" class="list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>События</h2>
+            <span class="muted small">локальный журнал</span>
+          </div>
+          <ul id="eventList" class="events"></ul>
+        </section>
+      </div>
+
+      <aside class="stack">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Политика доступа</h2>
+          </div>
+          <p class="muted small">Права, которые хост готов выдать новым подключениям.</p>
+          <div id="policyCaps" class="caps"></div>
+          <div class="panel-actions">
+            <span id="policyDirty" class="dirty" hidden>есть несохранённые изменения</span>
+            <button id="savePolicy" class="btn" type="button">Сохранить</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>История доступа</h2>
+          </div>
+          <div id="grantList" class="list"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Устройство</h2>
+          <dl class="facts">
+            <dt>Hostname</dt><dd id="factHostname">—</dd>
+            <dt>Система</dt><dd id="factOs">—</dd>
+            <dt>ID</dt>
+            <dd class="id-row"><code id="factId">—</code><button id="copyId" class="btn mini ghost" type="button">Копировать</button></dd>
+          </dl>
+        </section>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<div id="modal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <h3 id="modalTitle"></h3>
+    <p id="modalText" class="muted"></p>
+    <div class="actions end">
+      <button id="modalCancel" class="btn ghost" type="button">Отмена</button>
+      <button id="modalConfirm" class="btn danger" type="button">Подтвердить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const capLabels = { shell: "shell", screenshot: "снимок экрана" };
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("token") || sessionStorage.getItem("rsb_token") || "";
+  if (params.get("token")) {
+    sessionStorage.setItem("rsb_token", params.get("token"));
+  }
+
+  const $ = (id) => document.getElementById(id);
+  let lastState = null;
+  let policyDirty = false;
+  let lastRefreshError = "";
+  let modalAction = null;
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function when(value) {
+    if (!value) return "—";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString("ru-RU", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit"
+    });
+  }
+
+  function relTime(value) {
+    if (!value) return "";
+    const target = new Date(value).getTime();
+    if (Number.isNaN(target)) return "";
+    const diff = target - Date.now();
+    if (diff <= 0) return "истекло";
+    const minutes = Math.ceil(diff / 60000);
+    if (minutes < 60) return "осталось " + minutes + " мин";
+    const hours = Math.floor(minutes / 60);
+    return "осталось " + hours + " ч " + (minutes % 60) + " мин";
+  }
+
+  function capsText(caps) {
+    if (!caps || !caps.length) return "нет";
+    return caps.map((cap) => capLabels[cap] || cap).join(", ");
+  }
+
+  function operatorName(entry) {
+    return entry.operator_username ? "@" + entry.operator_username : "ID " + entry.operator_id;
+  }
+
+  function initial(value) {
+    const text = String(value || "?").replace("@", "");
+    return text ? text.charAt(0) : "?";
+  }
+
+  function capChips(caps) {
+    const box = el("div", "chips");
+    if (!caps || !caps.length) {
+      box.append(el("span", "cap off", "нет прав"));
+      return box;
+    }
+    caps.forEach((cap) => box.append(el("span", "cap", capLabels[cap] || cap)));
+    return box;
+  }
+
+  function emptyState(title, text) {
+    const box = el("div", "empty");
+    box.append(el("strong", null, title));
+    box.append(el("span", null, text));
+    return box;
+  }
+
+  function toast(message, type) {
+    const node = $("toast");
+    node.textContent = message;
+    node.className = "toast visible" + (type ? " " + type : "");
+    window.clearTimeout(toast.timer);
+    toast.timer = window.setTimeout(() => { node.className = "toast"; }, 4200);
+  }
+
+  async function api(path, options) {
+    const settings = Object.assign({ cache: "no-store" }, options || {});
+    settings.headers = Object.assign(
+      { "Content-Type": "application/json", "X-RSB-UI-Token": token },
+      settings.headers || {}
+    );
+    const response = await fetch(path, settings);
+    if (response.status === 401) {
+      throw new Error("Неверный токен панели. Откройте ссылку из установщика.");
+    }
+    if (!response.ok) {
+      let detail = response.statusText;
+      try {
+        const data = await response.json();
+        detail = data.detail || detail;
+      } catch (error) {}
+      throw new Error(detail);
+    }
+    const type = response.headers.get("content-type") || "";
+    return type.includes("application/json") ? response.json() : null;
+  }
+
+  async function act(callback) {
+    try {
+      const next = await callback();
+      if (next) render(next);
+    } catch (error) {
+      toast(error.message, "error");
+    }
+  }
+
+  function askConfirm(title, text, action) {
+    $("modalTitle").textContent = title;
+    $("modalText").textContent = text;
+    modalAction = action;
+    $("modal").hidden = false;
+    $("modalConfirm").focus();
+  }
+
+  function closeModal() {
+    $("modal").hidden = true;
+    modalAction = null;
+  }
+
+  function renderStats(state) {
+    const container = $("stats");
+    container.replaceChildren();
+    const entries = [
+      ["Relay", state.connected ? "подключён" : "нет связи", state.connected ? "ok" : "bad"],
+      ["Активные сессии", String(state.sessions.length), ""],
+      ["Ожидают решения", String(state.pending.length), state.pending.length ? "warn" : ""],
+      ["Права устройства", capsText(state.device.capabilities), ""]
+    ];
+    entries.forEach(([label, value, tone]) => {
+      const card = el("div", "stat");
+      card.append(el("span", "stat-label", label));
+      card.append(el("span", "stat-value" + (tone ? " " + tone : ""), value));
+      container.append(card);
+    });
+  }
+
+  function renderPolicy(state) {
+    const container = $("policyCaps");
+    if (!policyDirty) {
+      container.replaceChildren();
+      const enabled = state.device.capabilities || [];
+      ["shell", "screenshot"].forEach((key) => {
+        const label = el("label", "cap-toggle");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = key;
+        input.checked = enabled.includes(key);
+        input.addEventListener("change", () => {
+          policyDirty = true;
+          syncPolicyUi();
+        });
+        label.append(input, el("span", null, capLabels[key]));
+        container.append(label);
+      });
+    }
+    syncPolicyUi();
+  }
+
+  function syncPolicyUi() {
+    $("policyDirty").hidden = !policyDirty;
+    $("savePolicy").disabled = !policyDirty || !lastState || !lastState.connected;
+  }
+
+  function renderPending(state) {
+    const container = $("pendingList");
+    container.replaceChildren();
+    $("pendingCount").textContent = String(state.pending.length);
+    if (!state.pending.length) {
+      container.append(emptyState(
+        "Нет входящих запросов",
+        "Когда оператор запросит доступ, запрос появится здесь и будет ждать вашего решения."
+      ));
+      return;
+    }
+    const deviceCaps = state.device.capabilities || [];
+    state.pending.forEach((request) => {
+      const card = el("div", "card");
+      const head = el("div", "card-head");
+      const identity = el("div", "identity");
+      const avatar = el("div", "avatar", initial(request.operator_username));
+      const text = el("div", "identity-text");
+      text.append(el("strong", null, operatorName(request)));
+      text.append(el("span", null, "запрос на подключение"));
+      identity.append(avatar, text);
+      head.append(identity);
+      head.append(el("span", "pill warn", request.decision ? (request.decision === "approved" ? "подтверждено" : "отклонено") : "ожидает решения"));
+      card.append(head);
+
+      const meta = el("div", "meta-row");
+      meta.append(el("span", null, "Назначение: " + request.purpose));
+      meta.append(el("span", null, "Запрошено: " + capsText(request.requested_capabilities)));
+      meta.append(el("span", null, relTime(request.expires_at)));
+      card.append(meta);
+
+      if (request.previous_capabilities) {
+        card.append(el("div", "meta-row", "Ранее выдано: " + capsText(request.previous_capabilities)));
+      }
+
+      if (request.decision) {
+        card.append(el("div", "meta-row", request.decision === "approved" ? "Ожидание сессии." : "Запрос отклонён."));
+        container.append(card);
+        return;
+      }
+
+      const allowed = request.requested_capabilities.filter((cap) => deviceCaps.includes(cap));
+      if (!allowed.length) {
+        card.append(el("p", "error", "Запрошенные права запрещены текущей политикой."));
+        const onlyDeny = el("div", "actions");
+        const denyButton = el("button", "btn outline-danger", "Отклонить");
+        denyButton.type = "button";
+        denyButton.addEventListener("click", () => act(() => api(
+          "/api/sessions/" + request.id + "/decision",
+          { method: "POST", body: JSON.stringify({ approved: false, capabilities: [] }) }
+        )));
+        onlyDeny.append(denyButton);
+        card.append(onlyDeny);
+        container.append(card);
+        return;
+      }
+
+      const capsBox = el("div", "caps");
+      const inputs = [];
+      allowed.forEach((cap) => {
+        const label = el("label", "cap-toggle");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = cap;
+        input.checked = true;
+        inputs.push(input);
+        label.append(input, el("span", null, capLabels[cap]));
+        capsBox.append(label);
+      });
+      card.append(capsBox);
+
+      const actions = el("div", "actions");
+      const approve = el("button", "btn", "Подтвердить");
+      approve.type = "button";
+      approve.addEventListener("click", () => {
+        const capabilities = inputs.filter((input) => input.checked).map((input) => input.value);
+        if (!capabilities.length) {
+          toast("Выберите хотя бы одно право.", "error");
+          return;
+        }
+        act(async () => {
+          const next = await api("/api/sessions/" + request.id + "/decision", {
+            method: "POST",
+            body: JSON.stringify({ approved: true, capabilities: capabilities })
+          });
+          toast("Доступ подтверждён.", "success");
+          return next;
+        });
+      });
+      const deny = el("button", "btn ghost", "Отклонить");
+      deny.type = "button";
+      deny.addEventListener("click", () => act(async () => {
+        const next = await api("/api/sessions/" + request.id + "/decision", {
+          method: "POST",
+          body: JSON.stringify({ approved: false, capabilities: [] })
+        });
+        toast("Запрос отклонён.", "success");
+        return next;
+      }));
+      actions.append(approve, deny);
+      card.append(actions);
+      container.append(card);
+    });
+  }
+
+  function renderSessions(state) {
+    const container = $("sessionList");
+    container.replaceChildren();
+    $("sessionCount").textContent = String(state.sessions.length);
+    if (!state.sessions.length) {
+      container.append(emptyState(
+        "Активных сессий нет",
+        "Подтверждённые подключения появятся здесь. Каждую команду будет видно."
+      ));
+      return;
+    }
+    state.sessions.forEach((session) => {
+      const card = el("div", "card");
+      const head = el("div", "card-head");
+      const identity = el("div", "identity");
+      const avatar = el("div", "avatar", initial(session.operator_username));
+      const text = el("div", "identity-text");
+      text.append(el("strong", null, operatorName(session)));
+      text.append(el("span", null, "удалённая сессия"));
+      identity.append(avatar, text);
+      head.append(identity);
+      head.append(el("span", "pill " + (session.closing ? "warn" : "ok"), session.closing ? "закрывается" : "активна"));
+      card.append(head);
+
+      const meta = el("div", "meta-row");
+      meta.append(el("span", null, "Права: " + capsText(session.capabilities)));
+      meta.append(el("span", null, "Начало: " + when(session.created_at)));
+      meta.append(el("span", null, relTime(session.expires_at)));
+      card.append(meta);
+      card.append(el("div", "meta-row", "Рабочий каталог: " + session.cwd));
+
+      if (session.history && session.history.length) {
+        session.history.slice(0, 6).forEach((entry) => {
+          const block = el("div", "command");
+          const line = el("div", "command-line");
+          line.append(el("code", null, "$ " + entry.command));
+          const exit = el("span", "exit " + (entry.exit_code === 0 ? "ok" : "bad"),
+            entry.exit_code === null ? "таймаут" : "код " + entry.exit_code);
+          line.append(exit);
+          block.append(line);
+          if (entry.output) block.append(el("pre", null, entry.output));
+          card.append(block);
+        });
+      } else {
+        card.append(el("div", "meta-row", "Команд пока не было."));
+      }
+
+      if (session.has_screenshot) {
+        const figure = el("figure", "shot");
+        const link = document.createElement("a");
+        link.href = "/api/sessions/" + session.id + "/screenshot?token=" +
+          encodeURIComponent(token) + "&t=" + Date.now();
+        link.target = "_blank";
+        link.rel = "noopener";
+        const image = document.createElement("img");
+        image.src = link.href;
+        image.alt = "Последний снимок экрана";
+        link.append(image);
+        figure.append(link);
+        figure.append(el("figcaption", null, "Последний снимок, отправленный оператору"));
+        card.append(figure);
+      }
+
+      const actions = el("div", "actions");
+      if ((session.capabilities || []).includes("screenshot")) {
+        const restrict = el("button", "btn ghost", "Запретить снимок");
+        restrict.type = "button";
+        restrict.disabled = Boolean(session.closing);
+        restrict.addEventListener("click", () => askConfirm(
+          "Запретить снимок экрана?",
+          "Оператор больше не сможет делать снимки в этой сессии. Остальные права сохранятся.",
+          async () => {
+            const next = await api("/api/sessions/" + session.id + "/capabilities", {
+              method: "POST",
+              body: JSON.stringify({
+                capabilities: session.capabilities.filter((cap) => cap !== "screenshot")
+              })
+            });
+            toast("Право на снимок отозвано.", "success");
+            return next;
+          }
+        ));
+        actions.append(restrict);
+      }
+      const close = el("button", "btn outline-danger", "Завершить сессию");
+      close.type = "button";
+      close.disabled = Boolean(session.closing);
+      close.addEventListener("click", () => askConfirm(
+        "Завершить сессию?",
+        "Соединение будет закрыто, доступ оператора отозван немедленно.",
+        async () => {
+          const next = await api("/api/sessions/" + session.id + "/close", { method: "POST" });
+          toast("Сессия завершена.", "success");
+          return next;
+        }
+      ));
+      actions.append(close);
+      card.append(actions);
+      container.append(card);
+    });
+  }
+
+  function renderGrants(state) {
+    const container = $("grantList");
+    container.replaceChildren();
+    if (!state.grants.length) {
+      container.append(emptyState(
+        "История пуста",
+        "Здесь появятся операторы, которым вы уже выдавали доступ."
+      ));
+      return;
+    }
+    state.grants.forEach((grant) => {
+      const card = el("div", "card");
+      const head = el("div", "card-head");
+      const identity = el("div", "identity");
+      identity.append(el("div", "avatar", "ID"));
+      const text = el("div", "identity-text");
+      text.append(el("strong", null, "Оператор " + grant.operator_id));
+      text.append(el("span", null, "обновлено " + when(grant.updated_at)));
+      identity.append(text);
+      head.append(identity);
+      card.append(head);
+      card.append(capChips(grant.capabilities));
+      const actions = el("div", "actions");
+      const revoke = el("button", "btn ghost mini", "Отозвать права");
+      revoke.type = "button";
+      revoke.addEventListener("click", () => askConfirm(
+        "Отозвать сохранённые права?",
+        "История доступа оператора будет удалена. Действующие сессии это не закроет.",
+        async () => {
+          const next = await api("/api/grants/" + grant.operator_id + "/revoke", { method: "POST" });
+          toast("Права отозваны.", "success");
+          return next;
+        }
+      ));
+      actions.append(revoke);
+      card.append(actions);
+      container.append(card);
+    });
+  }
+
+  function renderEvents(state) {
+    const container = $("eventList");
+    container.replaceChildren();
+    if (!state.events.length) {
+      container.append(el("li", "muted", "Событий нет."));
+      return;
+    }
+    state.events.slice(0, 25).forEach((event) => {
+      const item = document.createElement("li");
+      if (String(event.action).includes("error") || String(event.action).includes("failed")) {
+        item.className = "event-error";
+      }
+      item.append(el("time", null, when(event.ts)));
+      const body = document.createElement("span");
+      body.append(el("strong", null, event.action));
+      if (event.detail) body.append(document.createTextNode(" — " + event.detail));
+      item.append(body);
+      container.append(item);
+    });
+  }
+
+  function render(state) {
+    lastState = state;
+    $("deviceName").textContent = state.device.name || "RemoteShellBot";
+    $("deviceMeta").textContent = [state.device.hostname, state.device.os_name]
+      .filter(Boolean).join(" · ") || "Локальная панель хоста";
+    $("factHostname").textContent = state.device.hostname || "—";
+    $("factOs").textContent = state.device.os_name || "—";
+    $("factId").textContent = state.device.id || "—";
+
+    const conn = $("connBadge");
+    conn.textContent = state.connected ? "relay подключён" : "relay недоступен";
+    conn.className = "pill " + (state.connected ? "ok" : "bad");
+
+    $("updatedAt").textContent = "обновлено " +
+      new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+    const locked = Boolean(state.locked);
+    $("lockScreen").hidden = !locked;
+    $("dashboard").hidden = locked;
+    $("lockButton").hidden = locked;
+
+    if (locked) {
+      $("lockHint").textContent = state.pending.length
+        ? "Ожидают решения: " + state.pending.length + ". Разблокируйте панель."
+        : "";
+      return;
+    }
+
+    renderStats(state);
+    renderPolicy(state);
+    renderPending(state);
+    renderSessions(state);
+    renderGrants(state);
+    renderEvents(state);
+  }
+
+  async function refresh() {
+    try {
+      const state = await api("/api/state");
+      lastRefreshError = "";
+      render(state);
+    } catch (error) {
+      if (error.message !== lastRefreshError) {
+        toast(error.message, "error");
+        lastRefreshError = error.message;
+      }
+    }
+  }
+
+  function savePolicy(capabilities) {
+    return act(async () => {
+      const next = await api("/api/policy", {
+        method: "POST",
+        body: JSON.stringify({ capabilities: capabilities })
+      });
+      policyDirty = false;
+      toast("Политика доступа сохранена.", "success");
+      return next;
+    });
+  }
+
+  $("savePolicy").addEventListener("click", () => {
+    const capabilities = Array.from(
+      $("policyCaps").querySelectorAll("input[type=checkbox]")
+    ).filter((input) => input.checked).map((input) => input.value);
+    if (!capabilities.length) {
+      askConfirm(
+        "Отключить удалённый доступ?",
+        "Все права будут запрещены, активные сессии закроются. Новые подключения станут невозможны.",
+        () => savePolicy(capabilities)
+      );
+      return;
+    }
+    savePolicy(capabilities);
+  });
+
+  $("unlockForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    $("lockError").hidden = true;
+    const button = event.target.querySelector("button");
+    button.disabled = true;
+    try {
+      await api("/api/unlock", {
+        method: "POST",
+        body: JSON.stringify({ password: $("passwordInput").value })
+      });
+      $("passwordInput").value = "";
+      await refresh();
+    } catch (error) {
+      $("lockError").textContent = error.message;
+      $("lockError").hidden = false;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $("lockButton").addEventListener("click", () => act(async () => {
+    await api("/api/lock", { method: "POST" });
+    toast("Панель заблокирована.", "success");
+    return api("/api/state");
+  }));
+
+  $("refreshButton").addEventListener("click", () => refresh());
+
+  $("copyId").addEventListener("click", async () => {
+    const id = lastState && lastState.device ? lastState.device.id : "";
+    if (!id) return;
+    try {
+      await navigator.clipboard.writeText(id);
+      toast("ID устройства скопирован.", "success");
+    } catch (error) {
+      toast("Не удалось скопировать ID.", "error");
+    }
+  });
+
+  $("modalCancel").addEventListener("click", closeModal);
+  $("modal").addEventListener("click", (event) => {
+    if (event.target === $("modal")) closeModal();
+  });
+  $("modalConfirm").addEventListener("click", async () => {
+    const action = modalAction;
+    closeModal();
+    if (action) await act(action);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("modal").hidden) closeModal();
+  });
+
+  if (!token) {
+    document.body.replaceChildren();
+    const block = el("div", "fatal");
+    block.append(el("h1", null, "Нет токена панели"));
+    block.append(el("p", "muted",
+      "Откройте адрес из вывода установщика: http://127.0.0.1:8765/?token=<токен>"));
+    document.body.append(block);
+    return;
+  }
+
+  refresh();
+  window.setInterval(() => {
+    if (!document.hidden) refresh();
+  }, 2500);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "remote-shell-bot"
+version = "0.1.0"
+description = "Consent-based remote shell and desktop support over Telegram"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "RemoteShellBot contributors" }]
+keywords = ["remote-support", "telegram", "shell", "administration"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Web Environment",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: System :: Systems Administration",
+]
+
+dependencies = [
+  "aiogram>=3.13,<4",
+  "aiohttp-socks>=0.9",
+  "aiosqlite>=0.20",
+  "cryptography>=43",
+  "fastapi>=0.115",
+  "httpx[socks]>=0.27",
+  "mss>=9.0",
+  "pillow>=10.4",
+  "psutil>=6.0",
+  "pydantic>=2.8",
+  "pydantic-settings>=2.4",
+  "pyotp>=2.9",
+  "python-socks[asyncio]>=2.5",
+  "qrcode[pil]>=7.4",
+  "rich>=13.7",
+  "typer>=0.12",
+  "uvicorn[standard]>=0.30",
+  "websockets>=13",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+rsb = "rsb.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rsb"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
+ignore = ["E501", "SIM105"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+"src/rsb/cli.py" = ["B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]

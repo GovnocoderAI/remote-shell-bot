@@ -1,0 +1,23 @@
+[Unit]
+Description=RemoteShellBot relay and Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rsb
+Group=rsb
+WorkingDirectory=/opt/remote-shell-bot
+EnvironmentFile=/etc/remote-shell-bot.env
+ExecStart=/opt/remote-shell-bot/venv/bin/rsb server
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/remote-shell-bot/data
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
