@@ -62,6 +62,7 @@ docker compose logs -f relay
 ```
 
 Сервис публикуется только на `127.0.0.1:8080`, TLS завершает reverse proxy.
+Внутри контейнера `RSB_RELAY_HOST=0.0.0.0` задаётся compose-файлом.
 SQLite хранится в именованном томе `rsb-data`. Резервная копия:
 
 ```

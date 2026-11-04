@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      RSB_RELAY_HOST: 0.0.0.0
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
