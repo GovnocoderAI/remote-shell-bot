@@ -30,6 +30,9 @@ RemoteShellBot — средство удалённой поддержки с я�
 - Кроссплатформенность: Windows, Linux, macOS.
 - Устойчивое подключение: прямое, через настроенный прокси, публичные списки
   прокси с GitHub и WireGuard по явному флагу.
+- Консольный клиент `rsb console`: shell, аудит, одноразовые и live-снимки
+  экрана с ANSI-предпросмотром.
+- Live-просмотр экрана только при выданном праве и активной сессии.
 - Диагностика сети: `rsb netcheck`.
 
 ## Чего в проекте нет
@@ -65,7 +68,8 @@ RemoteShellBot — средство удалённой поддержки с я�
 
 Подробности: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [docs/SECURITY.md](docs/SECURITY.md), [docs/PROTOCOL.md](docs/PROTOCOL.md),
-[docs/OPERATIONS.md](docs/OPERATIONS.md), [docs/NETWORKING.md](docs/NETWORKING.md).
+[docs/OPERATIONS.md](docs/OPERATIONS.md), [docs/NETWORKING.md](docs/NETWORKING.md),
+[docs/CONSOLE.md](docs/CONSOLE.md).
 
 ## Структура репозитория
 
@@ -87,17 +91,19 @@ remoteBot/
 │   └── rsb-server.service
 ├── docs/
 │   ├── ARCHITECTURE.md
+│   ├── CONSOLE.md
 │   ├── NETWORKING.md
 │   ├── OPERATIONS.md
 │   ├── PROTOCOL.md
 │   └── SECURITY.md
 ├── src/rsb/
-│   ├── cli.py               server | agent | connect | netcheck | vpn | enroll
+│   ├── cli.py               server | agent | connect | netcheck | console | vpn
 │   ├── config.py            настройки сервера и общие параметры
 │   ├── protocol.py          конверт сообщений и лимиты
 │   ├── security.py          токены, HMAC, TOTP, шифрование секретов
 │   ├── db/                  схема, подключение, репозиторий
 │   ├── net/                 прокси, диагностика, публичные списки, VPN
+│   ├── console/             консольный клиент и ANSI-предпросмотр
 │   ├── server/              relay, hub, сессии, бот
 │   └── agent/               клиент, исполнитель, снимки, локальная панель
 └── tests/                   unit- и сквозные тесты
@@ -138,6 +144,14 @@ docker compose logs -f relay
 ```
 
 Контейнер слушает `127.0.0.1:8080`; TLS завершает reverse proxy на хосте.
+
+Локальная консоль оператора:
+
+```bash
+rsb console
+```
+
+Для неё нужен `RSB_CONSOLE_TOKEN` в `.env` сервера.
 Данные и SQLite лежат в томе `rsb-data`.
 
 ### Enrollment и агент

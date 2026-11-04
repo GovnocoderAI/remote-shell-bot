@@ -69,6 +69,10 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    console_token: SecretStr = SecretStr("")
+    console_operator_id: int = 0
+    console_allow_remote: bool = False
+
     install_url: str = (
         "https://raw.githubusercontent.com/GovnocoderAI/remote-shell-bot/main/install.py"
     )

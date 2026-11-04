@@ -13,6 +13,7 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.theme import Theme
 
 from rsb.agent.config import AgentConfig, hash_password, new_ui_token
 from rsb.config import Settings
@@ -43,7 +44,17 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
-console = Console()
+THEME = Theme(
+    {
+        "rsb.title": "bold cyan",
+        "rsb.accent": "bold magenta",
+        "rsb.ok": "bold green",
+        "rsb.warn": "bold yellow",
+        "rsb.err": "bold red",
+        "rsb.dim": "grey62",
+    }
+)
+console = Console(theme=THEME)
 
 
 @app.command()
@@ -81,8 +92,14 @@ def server(
             "Use wss:// behind a TLS reverse proxy in production.",
             style="yellow",
         )
-    console.print(f"Relay listening on {settings.relay_host}:{settings.relay_port}")
-    console.print(f"Public URL: {settings.public_url}")
+    console.print(
+        Panel(
+            f"Слушает: [bold]{settings.relay_host}:{settings.relay_port}[/]\n"
+            f"Public URL: [bold]{settings.public_url}[/]",
+            title="[rsb.title]RemoteShellBot relay",
+            border_style="cyan",
+        )
+    )
     uvicorn.run(
         create_app(settings),
         host=settings.relay_host,
@@ -120,8 +137,15 @@ def agent(
     except ConfigError as exc:
         console.print(str(exc), style="red")
         raise typer.Exit(code=2) from exc
-    console.print(f"Device: {configuration.name} ({configuration.device_id})")
-    console.print(f"Local panel: {runtime.ui_url}")
+    console.print(
+        Panel(
+            f"Устройство: [bold]{configuration.name}[/]\n"
+            f"ID: [rsb.dim]{configuration.device_id}[/]\n"
+            f"Панель: [bold]{runtime.ui_url}[/]",
+            title="[rsb.title]RemoteShellBot agent",
+            border_style="cyan",
+        )
+    )
     try:
         asyncio.run(runtime.run(open_ui=open_ui))
     except KeyboardInterrupt:
@@ -392,10 +416,16 @@ def enroll(
         password_hash=hash_password(password),
     )
     configuration.save(path)
-    console.print(f"Enrolled as {device_name}", style="green")
-    console.print(f"Configuration: {path}")
-    console.print(f"Local panel: http://127.0.0.1:{ui_port}/?token={configuration.ui_token}")
-    console.print("Run: rsb connect")
+    console.print(
+        Panel(
+            f"Устройство: [bold]{device_name}[/]\n"
+            f"Конфигурация: {path}\n"
+            f"Локальная панель: [bold]http://127.0.0.1:{ui_port}/?token={configuration.ui_token}[/]\n\n"
+            "Дальше: [rsb.accent]rsb connect[/]",
+            title="[rsb.ok]Enrollment завершён",
+            border_style="green",
+        )
+    )
 
 
 vpn_app = typer.Typer(
@@ -553,6 +583,37 @@ def operator_deny(
     """Deny access without using the bot."""
     asyncio.run(_decide_access(data_dir, telegram_id, "denied"))
     console.print(f"Доступ отклонён: {telegram_id}", style="yellow")
+
+
+@app.command("console")
+def console_command(
+    url: str | None = typer.Option(
+        None, "--url", help="Relay base URL, for example http://127.0.0.1:30000."
+    ),
+    token: str | None = typer.Option(
+        None, "--token", envvar="RSB_CONSOLE_TOKEN", help="Console API token."
+    ),
+    interval: float = typer.Option(
+        1.0, "--interval", min=0.3, max=10.0, help="Live screen frame interval."
+    ),
+) -> None:
+    """Open the interactive operator console."""
+    settings = Settings()
+    token_value = (token or settings.console_token.get_secret_value()).strip()
+    if not token_value:
+        console.print(
+            Panel(
+                "RSB_CONSOLE_TOKEN не задан.\n"
+                "Добавьте токен в .env на сервере и перезапустите relay.",
+                title="[rsb.err]Консоль недоступна",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=2)
+    base_url = (url or http_base(settings.public_url)).rstrip("/")
+    from rsb.console.app import run_console
+
+    run_console(base_url, token_value, interval=interval)
 
 
 @app.command()

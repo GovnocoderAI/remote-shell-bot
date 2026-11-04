@@ -88,6 +88,27 @@ rsb operator deny 123456789
 После одобрения пользователь выполняет `/start`, настраивает TOTP и получает
 команды установки агента.
 
+## Консоль оператора
+
+Включите API и задайте оператора:
+
+```
+RSB_CONSOLE_TOKEN=<длинный случайный токен>
+RSB_CONSOLE_OPERATOR_ID=100000000
+RSB_CONSOLE_ALLOW_REMOTE=false
+```
+
+Запуск на сервере или локальной машине:
+
+```
+rsb console
+rsb console --url http://127.0.0.1:30000
+```
+
+Команды: `devices`, `connect`, `screen`, `watch`, `save`, `audit`, `close`.
+Live-просмотр требует права `screenshot` и подтверждения хоста.
+Подробности: [CONSOLE.md](CONSOLE.md).
+
 ## Данные
 
 SQLite лежит в `RSB_DATA_DIR/rsb.sqlite3` в режиме WAL. Резервная копия:

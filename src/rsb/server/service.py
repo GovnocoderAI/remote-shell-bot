@@ -535,7 +535,7 @@ class Service:
         }
 
     async def capture_screenshot(
-        self, session_id: str, operator_id: int
+        self, session_id: str, operator_id: int, notify: bool = True
     ) -> tuple[bytes, dict[str, Any]]:
         session = await self.repo.get_session(session_id)
         if session is None:
@@ -590,9 +590,10 @@ class Service:
             session_id=session_id,
             detail={"bytes": len(image)},
         )
-        device = await self.repo.get_device(session["device_id"])
-        if device is not None:
-            await self.notifier.screenshot(operator_id, session, device, image, meta)
+        if notify:
+            device = await self.repo.get_device(session["device_id"])
+            if device is not None:
+                await self.notifier.screenshot(operator_id, session, device, image, meta)
         return image, meta
 
     async def update_policy(self, device_id: str, capabilities: list[str]) -> list[str]:

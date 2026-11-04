@@ -299,3 +299,20 @@ async def test_command_error_is_reported(service: Service) -> None:
         await service.execute_command(session["id"], 100, "id")
     commands = await service.repo.list_commands(session["id"])
     assert commands[0]["output"] == "error: shell refused"
+
+
+async def test_screenshot_without_notification(service: Service) -> None:
+    device, _, hub, notifier = await scenario(service)
+    await service.update_policy(device["id"], ["shell", "screenshot"])
+    session = await service.request_session(100, device["id"], "support", ["shell", "screenshot"])
+    await service.decide_session(device["id"], session["id"], True, ["shell", "screenshot"])
+    hub.responses[Msg.SCREENSHOT_REQUEST] = {
+        "image": base64.b64encode(b"frame").decode("ascii"),
+        "width": 640,
+        "height": 480,
+        "taken_at": now_iso(),
+    }
+    before = len(notifier.events)
+    image, _ = await service.capture_screenshot(session["id"], 100, notify=False)
+    assert image == b"frame"
+    assert len(notifier.events) == before

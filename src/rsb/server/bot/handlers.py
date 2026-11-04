@@ -213,6 +213,7 @@ def build_router(service: Service, settings: Settings) -> Router:
             "/verify &lt;код&gt; — подтверждение входа\n"
             "/devices — список устройств\n"
             "/sessions — текущая сессия\n"
+            "/screen — снимок экрана\n"
             "/enroll — установка агента на машину\n"
             "/audit — последние события\n"
             "/revoke &lt;id&gt; — отзыв устройства\n"
@@ -399,6 +400,31 @@ def build_router(service: Service, settings: Settings) -> Router:
                 settings.install_url,
             )
         )
+
+    @router.message(Command("screen"))
+    async def cmd_screen(message: Message) -> None:
+        operator, problem = await _resolve_operator(service, settings, message.from_user)
+        if operator is None:
+            await message.answer(problem or views.access_denied())
+            return
+        auth_problem = _auth_problem(operator)
+        if auth_problem:
+            await message.answer(auth_problem)
+            return
+        session = await service.repo.get_open_session_for_operator(operator["telegram_id"])
+        if session is None or session["state"] != policy.STATE_ACTIVE:
+            await message.answer("Нет активной сессии.")
+            return
+        if policy.CAP_SCREENSHOT not in session["capabilities"]:
+            await message.answer("Хост не выдал право на снимок экрана.")
+            return
+        status = await message.answer("<i>Снимаю экран...</i>")
+        try:
+            await service.capture_screenshot(session["id"], operator["telegram_id"])
+        except RsbError as exc:
+            await status.edit_text(views.command_failed(str(exc)))
+            return
+        await status.edit_text("Снимок отправлен.")
 
     @router.message(Command("audit"))
     async def cmd_audit(message: Message) -> None:

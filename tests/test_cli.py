@@ -151,3 +151,12 @@ def test_operator_approve_and_list(tmp_path) -> None:
     output = plain(listing)
     assert "777" in output
     assert "approved" in output
+
+
+def test_console_help() -> None:
+    result = runner.invoke(app, ["console", "--help"])
+    assert result.exit_code == 0
+    output = plain(result)
+    assert "--url" in output
+    assert "--interval" in output
+    assert "--token" in output
