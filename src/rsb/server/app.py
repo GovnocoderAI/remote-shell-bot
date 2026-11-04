@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 import time
+from collections import deque
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -11,7 +12,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from rsb.config import Settings
@@ -48,6 +49,23 @@ async def _run_bot(
             return
         except TimeoutError:
             delay = min(delay * 2, 60.0)
+
+
+class SlidingWindow:
+    def __init__(self, limit: int, window_seconds: int) -> None:
+        self.limit = limit
+        self.window = window_seconds
+        self._hits: dict[str, deque[float]] = {}
+
+    def allow(self, key: str) -> bool:
+        now = time.monotonic()
+        bucket = self._hits.setdefault(key, deque())
+        while bucket and now - bucket[0] > self.window:
+            bucket.popleft()
+        if len(bucket) >= self.limit:
+            return False
+        bucket.append(now)
+        return True
 
 
 class EnrollRequest(BaseModel):
@@ -122,20 +140,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url=None,
     )
 
+    enroll_attempts = SlidingWindow(limit=10, window_seconds=60)
+
     @app.get("/healthz")
     async def healthz() -> dict[str, Any]:
+        return {"status": "ok", "time": int(time.time())}
+
+    @app.get("/readyz")
+    async def readyz() -> dict[str, Any]:
         service: Service = app.state.service
-        stats = await service.repo.stats()
-        return {"status": "ok", "time": int(time.time()), **stats}
+        try:
+            stats = await service.repo.stats()
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="database unavailable") from exc
+        return {"status": "ready", "time": int(time.time()), **stats}
 
     @app.post("/api/enroll")
-    async def enroll(body: EnrollRequest) -> dict[str, Any]:
+    async def enroll(body: EnrollRequest, request: Request) -> dict[str, Any]:
         service: Service = app.state.service
+        client_host = request.client.host if request.client else "unknown"
+        if not enroll_attempts.allow(client_host):
+            raise HTTPException(status_code=429, detail="too many enrollment attempts")
         try:
             device, secret = await service.enroll_device(
                 body.token, body.name, body.hostname, body.os_name, body.os_version
             )
         except RsbError as exc:
+            await service.repo.add_audit(
+                "enrollment.rejected",
+                actor_type="anonymous",
+                detail={"ip": client_host, "reason": str(exc)},
+            )
             raise HTTPException(status_code=401, detail=str(exc)) from exc
         return {
             "device_id": device["id"],

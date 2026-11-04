@@ -156,7 +156,6 @@ def wireguard_binary() -> str | None:
         )
         if candidate.exists():
             return str(candidate)
-        return shutil.which("wireguard.exe") or shutil.which("wg.exe")
     return shutil.which("wg-quick")
 
 

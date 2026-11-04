@@ -8,6 +8,7 @@ from typing import Any
 
 import aiosqlite
 
+from rsb.errors import ConfigError
 from rsb.util import ensure_private_file
 
 SCHEMA_VERSION = 1
@@ -35,11 +36,17 @@ class Database:
         await conn.execute("PRAGMA busy_timeout=5000")
         schema = Path(__file__).with_name("schema.sql").read_text(encoding="utf-8")
         await conn.executescript(schema)
-        await conn.execute(
-            "INSERT INTO schema_meta(version) SELECT ? "
-            "WHERE NOT EXISTS (SELECT 1 FROM schema_meta)",
-            (SCHEMA_VERSION,),
-        )
+        cursor = await conn.execute("SELECT version FROM schema_meta LIMIT 1")
+        row = await cursor.fetchone()
+        await cursor.close()
+        if row is None:
+            await conn.execute("INSERT INTO schema_meta(version) VALUES(?)", (SCHEMA_VERSION,))
+        elif int(row[0]) != SCHEMA_VERSION:
+            await conn.close()
+            raise ConfigError(
+                f"database schema version {row[0]} is not supported "
+                f"by this build (expected {SCHEMA_VERSION})"
+            )
         await conn.commit()
         self._conn = conn
         ensure_private_file(self.path)

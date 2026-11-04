@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -92,6 +93,7 @@ class FallbackResolver:
         self._cache_ttl = cache_ttl
         self._extra_sources = list(extra_sources)
         self._public_loaded = False
+        self._public_loaded_at = 0.0
         self._current: str | None = None
 
     @property
@@ -110,10 +112,14 @@ class FallbackResolver:
                     continue
                 self._current = candidate.url
                 return candidate.url
-            if not self._allow_public or self._public_loaded:
+            if not self._allow_public:
+                self._current = None
+                return None
+            if self._public_loaded and time.monotonic() - self._public_loaded_at < 600:
                 self._current = None
                 return None
             self._public_loaded = True
+            self._public_loaded_at = time.monotonic()
             working, _ = await discover_public(
                 self._health_url,
                 wait_seconds=self._timeout,
@@ -219,6 +225,22 @@ async def select_proxy(
             warnings.append(
                 "часть публичных источников недоступна: " + ", ".join(sorted(public_report.errors))
             )
+
+    if working and relay_url:
+        verified: list[ProxyCandidate] = []
+        for candidate in working[:3]:
+            check = await probe_websocket(
+                relay_url,
+                proxy=candidate.url,
+                wait_seconds=wait_seconds,
+                name="proxy.websocket",
+            )
+            if check.ok:
+                verified.append(candidate)
+        if verified:
+            working = verified + [c for c in working if c not in verified]
+        else:
+            warnings.append("ни один из проверенных прокси не прошёл WebSocket-проверку")
 
     if not working:
         raise ConfigError(

@@ -53,6 +53,9 @@ async def test_end_to_end_session_flow(tmp_path) -> None:
         async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as client:
             health = await client.get("/healthz")
             assert health.status_code == 200
+            ready = await client.get("/readyz")
+            assert ready.status_code == 200
+            assert ready.json()["status"] == "ready"
             enrolled = await client.post(
                 "/api/enroll",
                 json={

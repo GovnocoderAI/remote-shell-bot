@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from typer.testing import CliRunner
 
 from rsb.cli import app
@@ -69,3 +70,21 @@ def test_network_settings(tmp_path) -> None:
     assert settings.vpn_source_urls == ["https://c.example/vpn"]
     assert settings.resolved_proxy_file == tmp_path / "proxies.txt"
     assert settings.resolved_vpn_dir == tmp_path / "vpn"
+
+
+def test_invalid_proxy_configuration_is_rejected(tmp_path) -> None:
+    from rsb.config import Settings
+    from rsb.errors import ConfigError
+
+    server = Settings(
+        data_dir=tmp_path,
+        bot_token="123:test",
+        admin_ids="100",
+        telegram_proxy="ftp://proxy.example:21",
+    )
+    with pytest.raises(ConfigError):
+        server.validate_for_server()
+
+    agent = Settings(data_dir=tmp_path, agent_proxy="http://proxy.example")
+    with pytest.raises(ConfigError):
+        agent.validate_for_agent()

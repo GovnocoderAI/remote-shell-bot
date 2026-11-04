@@ -148,3 +148,26 @@ async def test_invalid_explicit_proxy_raises() -> None:
             allow_direct=False,
             allow_public=False,
         )
+
+
+async def test_proxy_websocket_precheck_prefers_working(monkeypatch) -> None:
+    from rsb.net.diagnostics import ProbeResult
+
+    good = "http://b.example:8080"
+    fake = _probe({"http://a.example:8080", good})
+    monkeypatch.setattr("rsb.net.pool.probe_http", fake)
+    monkeypatch.setattr("rsb.net.discovery.probe_http", fake)
+
+    async def ws_probe(relay_url, proxy=None, wait_seconds=4.0, name="proxy.websocket"):
+        ok = proxy == good
+        return ProbeResult(name, ok, "ok" if ok else "failed", 5.0 if ok else None)
+
+    monkeypatch.setattr("rsb.net.pool.probe_websocket", ws_probe)
+    selection = await select_proxy(
+        HEALTH,
+        explicit=["http://a.example:8080", good],
+        allow_direct=False,
+        allow_public=False,
+        relay_url="wss://relay.example",
+    )
+    assert selection.proxy == good

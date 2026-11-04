@@ -106,7 +106,13 @@ def enroll_device(
 def write_launcher(install_dir: Path, python: Path, data_dir: Path) -> Path:
     if platform.system() == "Windows":
         launcher = install_dir / "rsb-agent.cmd"
-        content = f'@echo off\r\n"{python}" -m rsb connect --data-dir "{data_dir}"\r\n'
+        content = (
+            "@echo off\r\n"
+            ":rsb_loop\r\n"
+            f'"{python}" -m rsb connect --data-dir "{data_dir}"\r\n'
+            "timeout /t 10 /nobreak >nul\r\n"
+            "goto rsb_loop\r\n"
+        )
         launcher.write_text(content, encoding="utf-8")
         return launcher
     launcher = install_dir / "rsb-agent.sh"
