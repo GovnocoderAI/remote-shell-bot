@@ -171,3 +171,37 @@ async def test_proxy_websocket_precheck_prefers_working(monkeypatch) -> None:
         relay_url="wss://relay.example",
     )
     assert selection.proxy == good
+
+
+async def test_no_public_skips_cached_public_proxies(monkeypatch, tmp_path) -> None:
+    from rsb.net.discovery import save_cache
+
+    cache = tmp_path / "cache.json"
+    save_cache(cache, [ProxyCandidate("http://public.example:8080", "TheSpeedX/http")])
+    fake = _probe({"http://public.example:8080"})
+    monkeypatch.setattr("rsb.net.pool.probe_http", fake)
+    monkeypatch.setattr("rsb.net.discovery.probe_http", fake)
+    with pytest.raises(ConfigError):
+        await select_proxy(
+            HEALTH,
+            allow_public=False,
+            cache_path=cache,
+            cache_ttl=3600,
+        )
+
+
+async def test_cached_public_is_used_when_allowed(monkeypatch, tmp_path) -> None:
+    from rsb.net.discovery import save_cache
+
+    cache = tmp_path / "cache.json"
+    save_cache(cache, [ProxyCandidate("http://public.example:8080", "TheSpeedX/http")])
+    fake = _probe({"http://public.example:8080"})
+    monkeypatch.setattr("rsb.net.pool.probe_http", fake)
+    monkeypatch.setattr("rsb.net.discovery.probe_http", fake)
+    selection = await select_proxy(
+        HEALTH,
+        allow_public=True,
+        cache_path=cache,
+        cache_ttl=3600,
+    )
+    assert selection.proxy == "http://public.example:8080"

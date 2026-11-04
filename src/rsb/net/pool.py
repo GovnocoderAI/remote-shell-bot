@@ -10,6 +10,7 @@ from typing import Protocol
 from rsb.errors import ConfigError
 from rsb.net.diagnostics import probe_http, probe_websocket
 from rsb.net.discovery import (
+    PUBLIC_PROXY_SOURCES,
     DiscoveryReport,
     ProxySource,
     discover_public,
@@ -171,11 +172,12 @@ async def select_proxy(
         except ProxyFormatError as exc:
             raise ConfigError(f"invalid proxy '{value}': {exc}") from exc
         explicit_candidates.append(ProxyCandidate(url=normalized, source="explicit"))
+    builtin_sources = {source.name for source in PUBLIC_PROXY_SOURCES}
+    cached = load_cache(cache_path, cache_ttl) if cache_path else []
+    if not allow_public:
+        cached = [candidate for candidate in cached if candidate.source not in builtin_sources]
     initial = dedupe(
-        explicit_candidates
-        + (from_file(proxy_file) if proxy_file else [])
-        + from_env()
-        + (load_cache(cache_path, cache_ttl) if cache_path else [])
+        explicit_candidates + (from_file(proxy_file) if proxy_file else []) + from_env() + cached
     )
 
     if allow_direct:
