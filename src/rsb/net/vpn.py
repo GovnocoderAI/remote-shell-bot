@@ -298,20 +298,20 @@ async def ensure_vpn(
         )
     configs = read_local_configs(settings.resolved_vpn_dir)
     warnings: list[str] = []
+    urls = read_source_urls(settings.resolved_vpn_sources_file)
     if allow_public:
-        urls = list(settings.vpn_source_urls)
-        urls.extend(read_source_urls(settings.resolved_vpn_sources_file))
+        urls.extend(settings.vpn_source_urls)
         urls.extend(extra_sources)
-        if urls:
-            fetched, errors = await fetch_public_configs(urls, wait_seconds=wait_seconds)
-            configs.extend(fetched)
-            if errors:
-                warnings.append("часть источников VPN недоступна: " + ", ".join(sorted(errors)))
-            if fetched:
-                warnings.append(
-                    "используются публичные WireGuard-конфиги: это недоверенная "
-                    "инфраструктура, трафик проходит через чужие узлы"
-                )
+    if urls:
+        fetched, errors = await fetch_public_configs(urls, wait_seconds=wait_seconds)
+        configs.extend(fetched)
+        if errors:
+            warnings.append("часть источников VPN недоступна: " + ", ".join(sorted(errors)))
+        if fetched:
+            warnings.append(
+                "используются внешние WireGuard-конфиги: это недоверенная "
+                "инфраструктура, трафик проходит через чужие узлы"
+            )
     if not configs:
         return VpnSession(
             connected=False,

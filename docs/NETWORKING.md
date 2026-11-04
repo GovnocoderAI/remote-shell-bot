@@ -106,8 +106,9 @@ socks5h://proxy3.example:1080
 - импорт через `rsb vpn add path/to/config.conf`;
 - источники в `data/vpn_sources.txt` (по одному URL на строку),
   `RSB_VPN_SOURCES` или `--vpn-source URL`;
-- `rsb connect --vpn` для локальных конфигов;
-- `rsb connect --vpn --vpn-public` для источников;
+- `rsb connect --vpn` для локальных конфигов и `data/vpn_sources.txt`;
+- `rsb connect --vpn --vpn-public` для `RSB_VPN_SOURCES` и
+  `--vpn-source`;
 - `--require-vpn` — не запускать агент, если VPN не поднялся.
 
 Пример `vpn_sources.txt`:

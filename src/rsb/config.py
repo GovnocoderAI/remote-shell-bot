@@ -158,8 +158,6 @@ class Settings(BaseSettings):
         self._validate_proxy(self.telegram_proxy, "RSB_TELEGRAM_PROXY")
 
     def validate_for_agent(self) -> None:
-        if not self.public_url.strip():
-            raise ConfigError("RSB_PUBLIC_URL is not set")
         self._validate_proxy(self.agent_proxy, "RSB_AGENT_PROXY")
 
     @staticmethod
