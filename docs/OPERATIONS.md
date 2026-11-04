@@ -53,6 +53,24 @@ curl -fsS http://127.0.0.1:8080/readyz
 Ответ содержит статус, число устройств и сессий. `/healthz` — только
 liveness без обращения к базе, `/readyz` — готовность с проверкой SQLite.
 
+## Docker
+
+```
+cp .env.example .env
+docker compose up -d --build
+docker compose logs -f relay
+```
+
+Сервис публикуется только на `127.0.0.1:8080`, TLS завершает reverse proxy.
+SQLite хранится в именованном томе `rsb-data`. Резервная копия:
+
+```
+docker run --rm -v remotebot_rsb-data:/data -v "$PWD":/backup alpine \
+  sh -c 'apk add --no-cache sqlite && sqlite3 /data/rsb.sqlite3 ".backup /backup/rsb.sqlite3"'
+```
+
+Для bind-mount каталога данных заранее выставьте владельца UID 10001.
+
 ## Данные
 
 SQLite лежит в `RSB_DATA_DIR/rsb.sqlite3` в режиме WAL. Резервная копия:

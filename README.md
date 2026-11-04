@@ -70,6 +70,8 @@ RemoteShellBot — средство удалённой поддержки с я�
 ```
 remoteBot/
 ├── install.py               установщик агента
+├── Dockerfile               сервер в контейнере
+├── docker-compose.yml
 ├── pyproject.toml
 ├── .env.example
 ├── proxies.example.txt
@@ -77,6 +79,7 @@ remoteBot/
 ├── CONTRIBUTING.md
 ├── CHANGELOG.md
 ├── .github/workflows/ci.yml
+├── .github/workflows/release.yml
 ├── deploy/
 │   ├── Caddyfile
 │   └── rsb-server.service
@@ -122,6 +125,18 @@ cp .env.example .env
 ```bash
 rsb server
 ```
+
+Контейнер:
+
+```bash
+cp .env.example .env
+# заполнить .env
+docker compose up -d --build
+docker compose logs -f relay
+```
+
+Контейнер слушает `127.0.0.1:8080`; TLS завершает reverse proxy на хосте.
+Данные и SQLite лежат в томе `rsb-data`.
 
 ### Enrollment и агент
 

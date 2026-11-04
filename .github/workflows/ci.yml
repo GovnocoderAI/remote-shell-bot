@@ -50,3 +50,13 @@ jobs:
       - name: Check packaged assets
         run: |
           python -c "import glob, zipfile; path=glob.glob('dist/*.whl')[0]; names=zipfile.ZipFile(path).namelist(); required=['rsb/agent/static/index.html','rsb/db/schema.sql','rsb/net/vpn.py']; missing=[item for item in required if item not in names]; assert not missing, missing; print('wheel ok:', path)"
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t remote-shell-bot:ci .
+      - name: Smoke test entrypoint
+        run: docker run --rm remote-shell-bot:ci rsb --help
