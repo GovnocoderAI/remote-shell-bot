@@ -35,7 +35,9 @@ rsb connect --no-public-proxies
 rsb connect --no-direct --proxy socks5://127.0.0.1:1080
 rsb connect --vpn
 rsb connect --vpn --vpn-public
+rsb connect --vpn --vpn-source https://example.com/wg.conf
 rsb connect --vpn --vpn-public --require-vpn
+rsb connect --proxy-source https://example.com/proxies.txt
 ```
 
 Порядок выбора канала:
@@ -78,7 +80,8 @@ socks5h://proxy3.example:1080
 - `proxifly/free-proxy-list` (HTTP и SOCKS5).
 
 Дополнительные источники можно указать в `RSB_PUBLIC_PROXY_SOURCES`
-через запятую. Формат — обычный текст, по одному `host:port` или URL на строку.
+через запятую или флагом `--proxy-source URL` (можно повторять).
+Формат — обычный текст, по одному `host:port` или URL на строку.
 
 Ограничения:
 
@@ -101,8 +104,8 @@ socks5h://proxy3.example:1080
 - обнаружение уже активного VPN (WireGuard, OpenVPN, Tailscale, WARP);
 - локальные конфиги в `data/vpn/*.conf`;
 - импорт через `rsb vpn add path/to/config.conf`;
-- источники в `data/vpn_sources.txt` (по одному URL на строку) или
-  `RSB_VPN_SOURCES`;
+- источники в `data/vpn_sources.txt` (по одному URL на строку),
+  `RSB_VPN_SOURCES` или `--vpn-source URL`;
 - `rsb connect --vpn` для локальных конфигов;
 - `rsb connect --vpn --vpn-public` для источников;
 - `--require-vpn` — не запускать агент, если VPN не поднялся.

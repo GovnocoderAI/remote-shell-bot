@@ -268,6 +268,7 @@ async def ensure_vpn(
     *,
     allow_public: bool = False,
     wait_seconds: float = 6.0,
+    extra_sources: Iterable[str] = (),
 ) -> VpnSession:
     adapters = detect_vpn_interfaces()
     if adapters:
@@ -300,6 +301,7 @@ async def ensure_vpn(
     if allow_public:
         urls = list(settings.vpn_source_urls)
         urls.extend(read_source_urls(settings.resolved_vpn_sources_file))
+        urls.extend(extra_sources)
         if urls:
             fetched, errors = await fetch_public_configs(urls, wait_seconds=wait_seconds)
             configs.extend(fetched)

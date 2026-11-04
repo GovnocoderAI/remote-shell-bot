@@ -45,6 +45,8 @@ def test_connect_help() -> None:
     assert "--no-public-proxies" in result.output
     assert "--vpn" in result.output
     assert "--proxy" in result.output
+    assert "--proxy-source" in result.output
+    assert "--vpn-source" in result.output
 
 
 def test_vpn_status(tmp_path, monkeypatch) -> None:
@@ -88,3 +90,23 @@ def test_invalid_proxy_configuration_is_rejected(tmp_path) -> None:
     agent = Settings(data_dir=tmp_path, agent_proxy="http://proxy.example")
     with pytest.raises(ConfigError):
         agent.validate_for_agent()
+
+
+def test_vpn_add_imports_config(tmp_path) -> None:
+    sample = tmp_path / "office.conf"
+    sample.write_text(
+        "[Interface]\n"
+        "PrivateKey = aaaa\n"
+        "Address = 10.0.0.2/32\n"
+        "\n"
+        "[Peer]\n"
+        "PublicKey = bbbb\n"
+        "Endpoint = vpn.example.com:51820\n"
+        "AllowedIPs = 0.0.0.0/0\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["vpn", "add", str(sample), "--data-dir", str(tmp_path / "data")])
+    assert result.exit_code == 0, result.output
+    imported = list((tmp_path / "data" / "vpn").glob("*.conf"))
+    assert len(imported) == 1
+    assert "PrivateKey" in imported[0].read_text(encoding="utf-8")

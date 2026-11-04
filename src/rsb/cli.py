@@ -51,10 +51,6 @@ def server(
     log_level: str | None = typer.Option(None, help="Override RSB_LOG_LEVEL."),
 ) -> None:
     """Run the relay, the Telegram bot and the database."""
-    import uvicorn
-
-    from rsb.server.app import create_app
-
     settings = Settings()
     if host:
         settings.relay_host = host
@@ -67,6 +63,11 @@ def server(
     except ConfigError as exc:
         console.print(f"Configuration error: {exc}", style="red")
         raise typer.Exit(code=2) from exc
+
+    import uvicorn
+
+    from rsb.server.app import create_app
+
     configure_logging(settings.log_level)
     settings.ensure_dirs()
     if settings.public_url.startswith("ws://") and settings.relay_host not in {
@@ -139,10 +140,18 @@ def connect(
     no_public: bool = typer.Option(
         False, "--no-public-proxies", help="Do not use public proxy lists."
     ),
-    wait_seconds: float = typer.Option(4.0, "--timeout", min=1.0, max=60.0),
+    proxy_source: list[str] = typer.Option(
+        [], "--proxy-source", help="Additional proxy list URL; repeatable."
+    ),
+    wait_seconds: float = typer.Option(
+        4.0, "--timeout", min=1.0, max=60.0, help="Probe timeout in seconds."
+    ),
     vpn: bool = typer.Option(False, "--vpn", help="Try WireGuard before proxies."),
     vpn_public: bool = typer.Option(
         False, "--vpn-public", help="Fetch VPN configs from configured sources."
+    ),
+    vpn_source: list[str] = typer.Option(
+        [], "--vpn-source", help="Additional WireGuard config URL; repeatable."
     ),
     require_vpn: bool = typer.Option(
         False, "--require-vpn", help="Abort if VPN cannot be established."
@@ -179,8 +188,9 @@ def connect(
                 vpn_session = await ensure_vpn(
                     settings,
                     health_url,
-                    allow_public=vpn_public,
+                    allow_public=vpn_public or bool(vpn_source),
                     wait_seconds=wait_seconds,
+                    extra_sources=vpn_source,
                 )
                 style = "green" if vpn_session.connected else "yellow"
                 console.print(f"VPN: {vpn_session.detail}", style=style)
@@ -193,14 +203,14 @@ def connect(
                 explicit=explicit,
                 proxy_file=candidates_file,
                 allow_direct=not no_direct,
-                allow_public=not no_public,
+                allow_public=not no_public or bool(proxy_source),
                 relay_url=configuration.relay_url,
                 wait_seconds=wait_seconds,
                 concurrency=settings.proxy_concurrency,
                 max_test=settings.public_proxy_max_test,
                 cache_path=settings.proxy_cache_path,
                 cache_ttl=settings.proxy_cache_ttl_seconds,
-                extra_source_urls=settings.public_source_urls,
+                extra_source_urls=list(settings.public_source_urls) + proxy_source,
             )
             if selection.source == "direct":
                 console.print("Канал: прямое подключение", style="green")
@@ -245,7 +255,9 @@ def netcheck(
     proxy: str | None = typer.Option(
         None, "--proxy", envvar="RSB_AGENT_PROXY", help="Check a specific proxy."
     ),
-    wait_seconds: float = typer.Option(6.0, "--timeout", min=1.0, max=120.0),
+    wait_seconds: float = typer.Option(
+        6.0, "--timeout", min=1.0, max=120.0, help="Probe timeout in seconds."
+    ),
     telegram: bool = typer.Option(True, "--telegram/--no-telegram"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
 ) -> None:
