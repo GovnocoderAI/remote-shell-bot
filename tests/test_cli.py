@@ -1,26 +1,34 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 from typer.testing import CliRunner
 
 from rsb.cli import app
 
 runner = CliRunner()
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def plain(result) -> str:
+    return re.sub(r"\s+", "", ANSI.sub("", result.output))
 
 
 def test_help_lists_commands() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "server" in result.output
-    assert "agent" in result.output
-    assert "enroll" in result.output
+    output = plain(result)
+    assert "server" in output
+    assert "agent" in output
+    assert "enroll" in output
 
 
 def test_agent_requires_enrollment(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["agent", "--data-dir", str(tmp_path / "data")])
     assert result.exit_code == 2
-    assert "configuration not found" in result.output
+    assert "configurationnotfound" in plain(result)
 
 
 def test_server_requires_configuration(tmp_path, monkeypatch) -> None:
@@ -29,32 +37,35 @@ def test_server_requires_configuration(tmp_path, monkeypatch) -> None:
         monkeypatch.delenv(variable, raising=False)
     result = runner.invoke(app, ["server", "--host", "127.0.0.1"])
     assert result.exit_code == 2
-    assert "Configuration error" in result.output
+    assert "Configurationerror" in plain(result)
 
 
 def test_netcheck_help() -> None:
     result = runner.invoke(app, ["netcheck", "--help"])
     assert result.exit_code == 0
-    assert "--json" in result.output
-    assert "--no-telegram" in result.output
+    output = plain(result)
+    assert "--json" in output
+    assert "--no-telegram" in output
 
 
 def test_connect_help() -> None:
     result = runner.invoke(app, ["connect", "--help"])
     assert result.exit_code == 0
-    assert "--no-public-proxies" in result.output
-    assert "--vpn" in result.output
-    assert "--proxy" in result.output
-    assert "--proxy-source" in result.output
-    assert "--vpn-source" in result.output
+    output = plain(result)
+    assert "--no-public-proxies" in output
+    assert "--vpn" in output
+    assert "--proxy" in output
+    assert "--proxy-source" in output
+    assert "--vpn-source" in output
 
 
 def test_vpn_status(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["vpn", "status", "--data-dir", str(tmp_path / "data")])
     assert result.exit_code == 0
-    assert "WireGuard" in result.output
-    assert "Активные VPN" in result.output
+    output = plain(result)
+    assert "WireGuard" in output
+    assert "АктивныеVPN" in output
 
 
 def test_network_settings(tmp_path) -> None:
@@ -115,18 +126,20 @@ def test_vpn_add_imports_config(tmp_path) -> None:
 def test_operator_help() -> None:
     result = runner.invoke(app, ["operator", "--help"])
     assert result.exit_code == 0
-    assert "approve" in result.output
-    assert "deny" in result.output
-    assert "list" in result.output
+    output = plain(result)
+    assert "approve" in output
+    assert "deny" in output
+    assert "list" in output
 
 
 def test_operator_approve_and_list(tmp_path) -> None:
     data_dir = tmp_path / "data"
     approved = runner.invoke(app, ["operator", "approve", "777", "--data-dir", str(data_dir)])
     assert approved.exit_code == 0, approved.output
-    assert "777" in approved.output
+    assert "777" in plain(approved)
 
     listing = runner.invoke(app, ["operator", "list", "--data-dir", str(data_dir)])
     assert listing.exit_code == 0, listing.output
-    assert "777" in listing.output
-    assert "approved" in listing.output
+    output = plain(listing)
+    assert "777" in output
+    assert "approved" in output
