@@ -170,7 +170,7 @@ class Settings(BaseSettings):
 
     @staticmethod
     def _validate_proxy(value: str, label: str) -> None:
-        if not value.strip():
+        if not value.strip() or value.strip().lower() in {"auto", "public"}:
             return
         from rsb.net.proxy import ProxyFormatError, normalize_proxy
 

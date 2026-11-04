@@ -102,6 +102,14 @@ def test_invalid_proxy_configuration_is_rejected(tmp_path) -> None:
     with pytest.raises(ConfigError):
         agent.validate_for_agent()
 
+    automatic = Settings(
+        data_dir=tmp_path,
+        bot_token="123:test",
+        admin_ids="100",
+        telegram_proxy="auto",
+    )
+    automatic.validate_for_server()
+
 
 def test_vpn_add_imports_config(tmp_path) -> None:
     sample = tmp_path / "office.conf"

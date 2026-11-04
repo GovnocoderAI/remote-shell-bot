@@ -133,11 +133,16 @@ rsb vpn add ./office.conf
 ## Telegram на сервере
 
 Если сервер не может достучаться до `api.telegram.org`, задайте HTTP/SOCKS
-прокси:
+прокси или включите автопоиск:
 
 ```
 RSB_TELEGRAM_PROXY=socks5://user:pass@proxy.example:1080
+# или
+RSB_TELEGRAM_PROXY=auto
 ```
+
+`auto` при старте проверяет прямое подключение, затем публичные списки прокси
+и выбирает рабочий маршрут до Bot API.
 
 Для SOCKS установлен `aiohttp-socks`. Проверка:
 

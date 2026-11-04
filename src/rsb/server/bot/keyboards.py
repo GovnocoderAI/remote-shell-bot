@@ -118,3 +118,11 @@ def pending_controls(session: dict[str, Any]) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def access_pending() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Проверить статус", callback_data="access:status")]
+        ]
+    )

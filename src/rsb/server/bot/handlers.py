@@ -169,10 +169,17 @@ def build_router(service: Service, settings: Settings) -> Router:
         is_admin = user.id in settings.admin_ids_set
         approved = is_admin or await service.repo.has_access(user.id)
         if not approved:
-            await message.answer(
-                views.new_user_welcome(user.id, user.username, settings.support_contact),
-                reply_markup=keyboards.new_user(),
-            )
+            request = await service.repo.get_access_request(user.id)
+            if request is not None and request["status"] == "pending":
+                await message.answer(
+                    views.access_pending(user.id, settings.support_contact),
+                    reply_markup=keyboards.access_pending(),
+                )
+            else:
+                await message.answer(
+                    views.new_user_welcome(user.id, user.username, settings.support_contact),
+                    reply_markup=keyboards.new_user(),
+                )
             return
         operator = await service.repo.ensure_operator(user.id, user.username)
         if not operator["is_active"]:
@@ -221,6 +228,10 @@ def build_router(service: Service, settings: Settings) -> Router:
             return
         if user.id in settings.admin_ids_set or await service.repo.has_access(user.id):
             await message.answer("Доступ уже есть. Выполните /start.")
+            return
+        existing = await service.repo.get_access_request(user.id)
+        if existing is not None and existing["status"] == "pending":
+            await message.answer(views.access_pending(user.id, settings.support_contact))
             return
         if not access_limiter.allow(user.id):
             await message.answer("Заявка уже отправлена недавно. Подождите несколько минут.")
@@ -437,6 +448,10 @@ def build_router(service: Service, settings: Settings) -> Router:
         if user.id in settings.admin_ids_set or await service.repo.has_access(user.id):
             await callback.answer("Доступ уже есть. Выполните /start.", show_alert=True)
             return
+        existing = await service.repo.get_access_request(user.id)
+        if existing is not None and existing["status"] == "pending":
+            await callback.answer("Заявка уже ожидает решения.", show_alert=True)
+            return
         if not access_limiter.allow(user.id):
             await callback.answer("Заявка уже отправлена недавно.", show_alert=True)
             return
@@ -450,6 +465,27 @@ def build_router(service: Service, settings: Settings) -> Router:
         await _notify_admins(callback.bot, request)
         await callback.answer("Заявка отправлена")
         await _edit(callback, views.access_request_sent(settings.support_contact))
+
+    @router.callback_query(F.data == "access:status")
+    async def cb_access_status(callback: CallbackQuery) -> None:
+        user = callback.from_user
+        if user is None:
+            return
+        if user.id in settings.admin_ids_set or await service.repo.has_access(user.id):
+            await callback.answer("Доступ уже есть. Выполните /start.", show_alert=True)
+            return
+        request = await service.repo.get_access_request(user.id)
+        if request is None:
+            await callback.answer("Заявки нет. Отправьте /request.", show_alert=True)
+        elif request["status"] == "pending":
+            await callback.answer("Заявка ожидает решения администратора.", show_alert=True)
+        elif request["status"] == "denied":
+            await callback.answer(
+                "Заявка отклонена. Можно отправить новую через /request.",
+                show_alert=True,
+            )
+        else:
+            await callback.answer("Доступ выдан. Выполните /start.", show_alert=True)
 
     @router.callback_query(F.data == "requests")
     async def cb_requests(callback: CallbackQuery) -> None:

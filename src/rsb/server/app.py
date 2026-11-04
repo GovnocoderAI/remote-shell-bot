@@ -96,6 +96,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if token:
             session = None
             telegram_proxy = current.telegram_proxy.strip()
+            if telegram_proxy.lower() in {"auto", "public"}:
+                from rsb.net.pool import select_proxy
+
+                selection = await select_proxy(
+                    "https://api.telegram.org/",
+                    allow_direct=True,
+                    allow_public=True,
+                    wait_seconds=max(current.proxy_timeout_seconds, 20.0),
+                    concurrency=current.proxy_concurrency,
+                    max_test=min(current.public_proxy_max_test, 120),
+                    cache_path=current.proxy_cache_path,
+                    cache_ttl=current.proxy_cache_ttl_seconds,
+                    extra_source_urls=current.public_source_urls,
+                )
+                telegram_proxy = selection.proxy or ""
+                if not telegram_proxy:
+                    raise ConfigError("no working proxy for the Telegram Bot API")
+                log.info("telegram proxy auto-selected: %s", redact_proxy(telegram_proxy))
             if telegram_proxy:
                 try:
                     telegram_proxy = normalize_proxy(telegram_proxy)

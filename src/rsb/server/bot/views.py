@@ -97,6 +97,16 @@ def no_access(user_id: int, support_contact: str = "") -> str:
     )
 
 
+def access_pending(user_id: int, support_contact: str = "") -> str:
+    contact = f"\nСвязь с администратором: {h(support_contact)}" if support_contact else ""
+    return (
+        "Заявка на доступ уже отправлена и ожидает решения администратора.\n"
+        f"Ваш Telegram ID: <code>{user_id}</code>.\n"
+        "После одобрения выполните /start."
+        f"{contact}"
+    )
+
+
 def access_request_sent(support_contact: str = "") -> str:
     contact = (
         f"\nЕсли долго нет ответа, свяжитесь с администратором: {h(support_contact)}"
