@@ -110,3 +110,23 @@ def test_vpn_add_imports_config(tmp_path) -> None:
     imported = list((tmp_path / "data" / "vpn").glob("*.conf"))
     assert len(imported) == 1
     assert "PrivateKey" in imported[0].read_text(encoding="utf-8")
+
+
+def test_operator_help() -> None:
+    result = runner.invoke(app, ["operator", "--help"])
+    assert result.exit_code == 0
+    assert "approve" in result.output
+    assert "deny" in result.output
+    assert "list" in result.output
+
+
+def test_operator_approve_and_list(tmp_path) -> None:
+    data_dir = tmp_path / "data"
+    approved = runner.invoke(app, ["operator", "approve", "777", "--data-dir", str(data_dir)])
+    assert approved.exit_code == 0, approved.output
+    assert "777" in approved.output
+
+    listing = runner.invoke(app, ["operator", "list", "--data-dir", str(data_dir)])
+    assert listing.exit_code == 0, listing.output
+    assert "777" in listing.output
+    assert "approved" in listing.output

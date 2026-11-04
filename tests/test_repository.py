@@ -150,3 +150,30 @@ async def test_stats(repo: Repository) -> None:
     assert stats["devices_total"] == 1
     assert stats["devices_online"] == 1
     assert stats["active_sessions"] == 0
+
+
+async def test_access_request_flow(repo: Repository) -> None:
+    assert not await repo.has_access(300)
+    request = await repo.upsert_access_request(300, "candidate")
+    assert request["status"] == "pending"
+
+    await repo.set_access_status(300, "approved", decided_by=100)
+    assert await repo.has_access(300)
+
+    repeated = await repo.upsert_access_request(300, "renamed")
+    assert repeated["status"] == "approved"
+
+    await repo.set_access_status(301, "denied", decided_by=100)
+    renewed = await repo.upsert_access_request(301, "denied-user")
+    assert renewed["status"] == "pending"
+
+    pending = await repo.list_access_requests("pending")
+    assert [item["telegram_id"] for item in pending] == [301]
+
+
+async def test_access_status_can_bootstrap_unknown_user(repo: Repository) -> None:
+    await repo.set_access_status(999, "approved")
+    assert await repo.has_access(999)
+    entry = await repo.get_access_request(999)
+    assert entry is not None
+    assert entry["status"] == "approved"

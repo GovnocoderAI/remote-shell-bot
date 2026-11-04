@@ -99,6 +99,95 @@ class Repository:
             (1 if active else 0, telegram_id),
         )
 
+    async def get_access_request(self, telegram_id: int) -> dict[str, Any] | None:
+        return _record(
+            await self.db.fetchone(
+                "SELECT * FROM access_requests WHERE telegram_id = ?", (telegram_id,)
+            )
+        )
+
+    async def upsert_access_request(
+        self,
+        telegram_id: int,
+        username: str | None,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        stamp = now or now_iso()
+        await self.db.execute(
+            """
+            INSERT INTO access_requests(telegram_id, username, status, created_at)
+            VALUES(?, ?, 'pending', ?)
+            ON CONFLICT(telegram_id) DO UPDATE SET
+                username = excluded.username,
+                status = CASE
+                    WHEN access_requests.status = 'approved' THEN 'approved'
+                    ELSE 'pending'
+                END,
+                created_at = CASE
+                    WHEN access_requests.status = 'approved' THEN access_requests.created_at
+                    ELSE excluded.created_at
+                END,
+                decided_at = CASE
+                    WHEN access_requests.status = 'approved' THEN access_requests.decided_at
+                    ELSE NULL
+                END,
+                decided_by = CASE
+                    WHEN access_requests.status = 'approved' THEN access_requests.decided_by
+                    ELSE NULL
+                END
+            """,
+            (telegram_id, username, stamp),
+        )
+        request = await self.get_access_request(telegram_id)
+        assert request is not None
+        return request
+
+    async def set_access_status(
+        self,
+        telegram_id: int,
+        status: str,
+        decided_by: int | None = None,
+        now: str | None = None,
+    ) -> None:
+        if status not in {"pending", "approved", "denied"}:
+            raise ValueError("invalid access status")
+        stamp = now or now_iso()
+        await self.db.execute(
+            """
+            INSERT INTO access_requests(
+                telegram_id, username, status, created_at, decided_at, decided_by
+            )
+            VALUES(?, NULL, ?, ?, ?, ?)
+            ON CONFLICT(telegram_id) DO UPDATE SET
+                status = excluded.status,
+                decided_at = excluded.decided_at,
+                decided_by = excluded.decided_by
+            """,
+            (telegram_id, status, stamp, stamp, decided_by),
+        )
+
+    async def has_access(self, telegram_id: int) -> bool:
+        row = await self.db.fetchone(
+            "SELECT 1 FROM access_requests WHERE telegram_id = ? AND status = 'approved'",
+            (telegram_id,),
+        )
+        return row is not None
+
+    async def list_access_requests(
+        self, status: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        if status is None:
+            rows = await self.db.fetchall(
+                "SELECT * FROM access_requests ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            )
+        else:
+            rows = await self.db.fetchall(
+                "SELECT * FROM access_requests WHERE status = ? ORDER BY created_at DESC LIMIT ?",
+                (status, limit),
+            )
+        return _records(rows)
+
     async def issue_enrollment(
         self,
         token_hash: str,

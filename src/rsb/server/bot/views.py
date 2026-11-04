@@ -71,6 +71,67 @@ def access_denied() -> str:
     )
 
 
+def new_user_welcome(user_id: int, username: str | None, support_contact: str = "") -> str:
+    contact = f"\nСвязь с администратором: {h(support_contact)}" if support_contact else ""
+    return (
+        "<b>RemoteShellBot</b>\n"
+        "Удалённая поддержка компьютеров с подтверждением на стороне хоста.\n\n"
+        "<b>Что умеет</b>\n"
+        "- удалённый shell с прозрачным журналом команд;\n"
+        "- снимок экрана только с разрешения владельца;\n"
+        "- локальная панель, где владелец видит подключения и права.\n\n"
+        f"Ваш Telegram ID: <code>{user_id}</code>.\n"
+        "Доступ выдаётся администратором. Нажмите «Запросить доступ» "
+        "или отправьте /request."
+        f"{contact}"
+    )
+
+
+def no_access(user_id: int, support_contact: str = "") -> str:
+    contact = f"\nСвязь с администратором: {h(support_contact)}" if support_contact else ""
+    return (
+        "Доступ к боту не выдан.\n"
+        f"Ваш Telegram ID: <code>{user_id}</code>.\n"
+        "Отправьте /request, чтобы создать заявку на доступ."
+        f"{contact}"
+    )
+
+
+def access_request_sent(support_contact: str = "") -> str:
+    contact = (
+        f"\nЕсли долго нет ответа, свяжитесь с администратором: {h(support_contact)}"
+        if support_contact
+        else ""
+    )
+    return (
+        "Заявка на доступ отправлена.\n"
+        "После одобрения выполните /start и настройте 2FA через /setup."
+        f"{contact}"
+    )
+
+
+def admin_access_request(user_id: int, username: str | None) -> str:
+    name = f"@{username}" if username else "без username"
+    return (
+        "<b>Новая заявка на доступ</b>\n"
+        f"Пользователь: {h(name)}\n"
+        f"Telegram ID: <code>{user_id}</code>"
+    )
+
+
+def access_approved() -> str:
+    return (
+        "Доступ выдан.\n\n"
+        "Шаг 1. Выполните /start.\n"
+        "Шаг 2. Настройте 2FA через /setup и подтвердите кодом /verify.\n"
+        "Шаг 3. Выполните /enroll и установите агент на нужную машину."
+    )
+
+
+def access_denied_message() -> str:
+    return "Заявка на доступ отклонена администратором."
+
+
 def need_setup() -> str:
     return "Двухфакторная аутентификация не настроена. Выполните /setup."
 
@@ -262,12 +323,23 @@ def screenshot_caption(device: dict[str, Any], meta: dict[str, Any]) -> str:
     return f"Снимок экрана: {h(device['name'])}{size} · {when(meta.get('taken_at'))}"
 
 
-def enroll_ready(command: str, expires_at: str, relay_url: str) -> str:
+def enroll_ready(
+    commands: dict[str, str],
+    expires_at: str,
+    relay_url: str,
+    install_url: str = "",
+) -> str:
+    blocks = "\n\n".join(
+        f"<b>{h(platform)}</b>\n<pre>{h(command)}</pre>" for platform, command in commands.items()
+    )
+    source_note = f"\n\nУстановщик: <code>{h(install_url)}</code>" if install_url else ""
     return (
         "<b>Одноразовый токен установки</b>\n"
-        f"Действует до {when(expires_at)}. Используется один раз.\n\n"
-        f"<pre>{h(command)}</pre>\n"
-        f"Relay: <code>{h(relay_url)}</code>\n\n"
+        f"Действует до {when(expires_at)}. Используется один раз, "
+        "не пересылайте его.\n\n"
+        f"{blocks}\n\n"
+        f"Relay: <code>{h(relay_url)}</code>"
+        f"{source_note}\n\n"
         "После установки владелец машины задаёт пароль хоста и подтверждает "
         "первое подключение в локальной панели."
     )

@@ -13,12 +13,20 @@ import json
 import os
 import platform
 import secrets
+import shutil
 import stat
 import subprocess
 import sys
+import tarfile
+import tempfile
+import urllib.request
+import zipfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+DEFAULT_SOURCE_URL = (
+    "https://github.com/GovnocoderAI/remote-shell-bot/archive/refs/heads/main.tar.gz"
+)
 MIN_PYTHON = (3, 11)
 TASK_NAME = "RemoteShellBotAgent"
 SYSTEMD_UNIT = "remote-shell-bot.service"
@@ -57,14 +65,66 @@ def ensure_private_dir(path: Path) -> None:
         pass
 
 
-def create_environment(install_dir: Path, base_python: str) -> Path:
+def _extract_archive(archive: Path, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    base = destination.resolve()
+    if zipfile.is_zipfile(archive):
+        with zipfile.ZipFile(archive) as bundle:
+            for member in bundle.infolist():
+                target = (destination / member.filename).resolve()
+                if not target.is_relative_to(base):
+                    raise SystemExit("source archive contains an unsafe path")
+            bundle.extractall(destination)
+        return
+    if tarfile.is_tarfile(archive):
+        with tarfile.open(archive) as bundle:
+            for member in bundle.getmembers():
+                target = (destination / member.name).resolve()
+                if not target.is_relative_to(base):
+                    raise SystemExit("source archive contains an unsafe path")
+                if member.issym() or member.islnk():
+                    raise SystemExit("source archive contains links")
+            bundle.extractall(destination)
+        return
+    raise SystemExit(f"unsupported source archive: {archive}")
+
+
+def ensure_project_source(project_root: Path, source: str, work_dir: Path) -> Path:
+    if (project_root / "pyproject.toml").exists():
+        return project_root
+    source = source.strip() or DEFAULT_SOURCE_URL
+    work_dir.mkdir(parents=True, exist_ok=True)
+    if source.startswith(("http://", "https://")):
+        archive = work_dir / "source.archive"
+        print(f"Downloading project source: {source}")
+        request = urllib.request.Request(
+            source, headers={"User-Agent": "RemoteShellBot/0.1 installer"}
+        )
+        with urllib.request.urlopen(request, timeout=60) as response, archive.open("wb") as target:
+            shutil.copyfileobj(response, target)
+    else:
+        archive = Path(source).expanduser()
+        if archive.is_dir():
+            return archive
+    if not archive.exists():
+        raise SystemExit(f"source archive not found: {archive}")
+    extracted = work_dir / "src"
+    _extract_archive(archive, extracted)
+    candidates = [extracted, *[item for item in extracted.iterdir() if item.is_dir()]]
+    for candidate in candidates:
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+    raise SystemExit("source archive does not contain pyproject.toml")
+
+
+def create_environment(install_dir: Path, base_python: str, source_root: Path) -> Path:
     target = install_dir / "venv"
     python = venv_python(install_dir)
     if not python.exists():
         print(f"Creating virtual environment at {target}")
         run([base_python, "-m", "venv", str(target)])
     run([str(python), "-m", "pip", "install", "--upgrade", "pip"])
-    run([str(python), "-m", "pip", "install", "--upgrade", str(PROJECT_ROOT)])
+    run([str(python), "-m", "pip", "install", "--upgrade", str(source_root)])
     return python
 
 
@@ -258,6 +318,11 @@ def main() -> int:
     parser.add_argument(
         "--python", default=sys.executable, help="Base interpreter for the virtual environment"
     )
+    parser.add_argument(
+        "--source",
+        default=os.environ.get("RSB_INSTALL_SOURCE", "") or DEFAULT_SOURCE_URL,
+        help="Project archive URL or local source directory",
+    )
     parser.add_argument("--no-service", action="store_true", help="Do not register autostart")
     parser.add_argument("--no-enroll", action="store_true", help="Install only, skip enrollment")
     parser.add_argument("--force", action="store_true", help="Re-enroll an existing installation")
@@ -272,8 +337,10 @@ def main() -> int:
     )
     ensure_private_dir(install_dir)
     ensure_private_dir(data_dir)
-    python = create_environment(install_dir, options.python)
-    print(f"Package installed: {PROJECT_ROOT}")
+    temp_dir = tempfile.mkdtemp(prefix="rsb-source-")
+    source_root = ensure_project_source(PROJECT_ROOT, options.source, Path(temp_dir))
+    python = create_environment(install_dir, options.python, source_root)
+    print(f"Package installed: {source_root}")
 
     configuration: dict | None = None
     if not options.no_enroll:

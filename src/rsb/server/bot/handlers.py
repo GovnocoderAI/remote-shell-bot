@@ -58,12 +58,17 @@ async def _resolve_operator(
 ) -> tuple[dict[str, Any] | None, str | None]:
     if user is None:
         return None, views.access_denied()
-    if user.id not in settings.admin_ids_set:
-        return None, views.access_denied()
+    is_admin = user.id in settings.admin_ids_set
+    if not is_admin and not await service.repo.has_access(user.id):
+        return None, views.no_access(user.id, settings.support_contact)
     operator = await service.repo.ensure_operator(user.id, user.username)
     if not operator["is_active"]:
         return None, "Учётная запись оператора отключена."
     return operator, None
+
+
+def _is_env_admin(settings: Settings, user: User | None) -> bool:
+    return user is not None and user.id in settings.admin_ids_set
 
 
 def _qr_png(payload: str) -> bytes:
@@ -81,6 +86,7 @@ def build_router(service: Service, settings: Settings) -> Router:
     attempts = SlidingWindow(5, 300)
     command_limiter = SlidingWindow(20, 60)
     request_limiter = SlidingWindow(5, 60)
+    access_limiter = SlidingWindow(3, 300)
 
     async def _edit(callback: CallbackQuery, text: str, markup=None) -> None:
         message = callback.message
@@ -111,6 +117,18 @@ def build_router(service: Service, settings: Settings) -> Router:
             await callback.answer(auth_problem[:190], show_alert=True)
             return None
         return operator
+
+    async def _notify_admins(bot, request: dict) -> None:
+        if not settings.admin_ids_set:
+            log.warning("access request received but RSB_ADMIN_IDS is empty")
+            return
+        text = views.admin_access_request(request["telegram_id"], request.get("username"))
+        markup = keyboards.access_decision(request["telegram_id"])
+        for admin_id in settings.admin_ids_set:
+            try:
+                await bot.send_message(admin_id, text, reply_markup=markup)
+            except Exception:
+                log.warning("failed to notify admin %s", admin_id, exc_info=True)
 
     async def _render_device(device_id: str) -> tuple[str, Any] | None:
         device = await service.repo.get_device(device_id)
@@ -145,32 +163,93 @@ def build_router(service: Service, settings: Settings) -> Router:
 
     @router.message(CommandStart())
     async def cmd_start(message: Message) -> None:
-        operator, problem = await _resolve_operator(service, settings, message.from_user)
-        if operator is None:
-            await message.answer(problem or views.access_denied())
+        user = message.from_user
+        if user is None:
+            return
+        is_admin = user.id in settings.admin_ids_set
+        approved = is_admin or await service.repo.has_access(user.id)
+        if not approved:
+            await message.answer(
+                views.new_user_welcome(user.id, user.username, settings.support_contact),
+                reply_markup=keyboards.new_user(),
+            )
+            return
+        operator = await service.repo.ensure_operator(user.id, user.username)
+        if not operator["is_active"]:
+            await message.answer("Учётная запись оператора отключена.")
             return
         auth_problem = _auth_problem(operator)
         if auth_problem:
-            await message.answer(f"{auth_problem}\n\nЕсли 2FA ещё не настроена, выполните /setup.")
+            await message.answer(
+                "Доступ есть.\n\n"
+                "Шаг 1. /setup — подключите 2FA.\n"
+                "Шаг 2. /verify &lt;код&gt; — подтвердите вход.\n"
+                "Шаг 3. /enroll — установите агент на машину.\n\n"
+                f"{auth_problem}"
+            )
             return
         stats = await service.repo.stats()
-        await message.answer(views.main_menu(stats), reply_markup=keyboards.main_menu())
+        await message.answer(
+            views.main_menu(stats),
+            reply_markup=keyboards.main_menu(include_requests=is_admin),
+        )
 
     @router.message(Command("help"))
     async def cmd_help(message: Message) -> None:
         await message.answer(
+            "<b>RemoteShellBot</b>\n"
+            "Удалённая поддержка с подтверждением на хосте.\n\n"
             "<b>Команды</b>\n"
             "/start — состояние и меню\n"
+            "/request — запросить доступ\n"
             "/setup — настройка 2FA\n"
             "/verify &lt;код&gt; — подтверждение входа\n"
             "/devices — список устройств\n"
             "/sessions — текущая сессия\n"
-            "/enroll — токен установки агента\n"
+            "/enroll — установка агента на машину\n"
             "/audit — последние события\n"
             "/revoke &lt;id&gt; — отзыв устройства\n"
-            "/logout — сброс авторизации\n\n"
+            "/logout — сброс авторизации\n"
+            "/requests — заявки на доступ (администратор)\n\n"
             "Любое текстовое сообщение при активной сессии выполняется как команда."
         )
+
+    @router.message(Command("request"))
+    async def cmd_request(message: Message) -> None:
+        user = message.from_user
+        if user is None:
+            return
+        if user.id in settings.admin_ids_set or await service.repo.has_access(user.id):
+            await message.answer("Доступ уже есть. Выполните /start.")
+            return
+        if not access_limiter.allow(user.id):
+            await message.answer("Заявка уже отправлена недавно. Подождите несколько минут.")
+            return
+        request = await service.repo.upsert_access_request(user.id, user.username)
+        await service.repo.add_audit(
+            "access.requested",
+            actor_type="user",
+            actor_id=user.id,
+            detail={"username": user.username},
+        )
+        await _notify_admins(message.bot, request)
+        await message.answer(views.access_request_sent(settings.support_contact))
+
+    @router.message(Command("requests"))
+    async def cmd_requests(message: Message) -> None:
+        if not _is_env_admin(settings, message.from_user):
+            await message.answer("Список заявок доступен только администратору.")
+            return
+        pending = await service.repo.list_access_requests("pending")
+        if not pending:
+            await message.answer("Новых заявок нет.")
+            return
+        await message.answer(f"Заявок на доступ: {len(pending)}")
+        for request in pending[:20]:
+            await message.answer(
+                views.admin_access_request(request["telegram_id"], request.get("username")),
+                reply_markup=keyboards.access_decision(request["telegram_id"]),
+            )
 
     @router.message(Command("setup"))
     async def cmd_setup(message: Message) -> None:
@@ -226,7 +305,9 @@ def build_router(service: Service, settings: Settings) -> Router:
         stats = await service.repo.stats()
         await message.answer(
             "Подтверждено.\n\n" + views.main_menu(stats),
-            reply_markup=keyboards.main_menu(),
+            reply_markup=keyboards.main_menu(
+                include_requests=_is_env_admin(settings, message.from_user)
+            ),
             disable_web_page_preview=True,
         )
 
@@ -278,10 +359,35 @@ def build_router(service: Service, settings: Settings) -> Router:
             return
         label = sanitize_filename((command.args or "").strip() or "device")
         token, expires_at = await service.issue_enrollment(operator["telegram_id"], label)
-        install_command = (
-            f"python install.py --relay {settings.public_url} --token {token} --name {label}"
+        source_arg = (
+            f"--source {settings.install_source_url} "
+            if settings.install_source_url.strip()
+            else ""
         )
-        await message.answer(views.enroll_ready(install_command, expires_at, settings.public_url))
+        arguments = f"{source_arg}--relay {settings.public_url} --token {token} --name {label}"
+        if settings.install_url.strip():
+            windows_command = (
+                "powershell -NoProfile -Command "
+                f'"iwr {settings.install_url} -OutFile install.py; '
+                f'python install.py {arguments}"'
+            )
+            unix_command = (
+                f"curl -fsSL {settings.install_url} -o install.py && python3 install.py {arguments}"
+            )
+        else:
+            windows_command = f"python install.py {arguments}"
+            unix_command = f"python3 install.py {arguments}"
+        await message.answer(
+            views.enroll_ready(
+                {
+                    "Windows (PowerShell)": windows_command,
+                    "Linux/macOS": unix_command,
+                },
+                expires_at,
+                settings.public_url,
+                settings.install_url,
+            )
+        )
 
     @router.message(Command("audit"))
     async def cmd_audit(message: Message) -> None:
@@ -323,13 +429,118 @@ def build_router(service: Service, settings: Settings) -> Router:
     async def cmd_menu(message: Message) -> None:
         await cmd_start(message)
 
+    @router.callback_query(F.data == "access:request")
+    async def cb_access_request(callback: CallbackQuery) -> None:
+        user = callback.from_user
+        if user is None:
+            return
+        if user.id in settings.admin_ids_set or await service.repo.has_access(user.id):
+            await callback.answer("Доступ уже есть. Выполните /start.", show_alert=True)
+            return
+        if not access_limiter.allow(user.id):
+            await callback.answer("Заявка уже отправлена недавно.", show_alert=True)
+            return
+        request = await service.repo.upsert_access_request(user.id, user.username)
+        await service.repo.add_audit(
+            "access.requested",
+            actor_type="user",
+            actor_id=user.id,
+            detail={"username": user.username},
+        )
+        await _notify_admins(callback.bot, request)
+        await callback.answer("Заявка отправлена")
+        await _edit(callback, views.access_request_sent(settings.support_contact))
+
+    @router.callback_query(F.data == "requests")
+    async def cb_requests(callback: CallbackQuery) -> None:
+        if not _is_env_admin(settings, callback.from_user):
+            await callback.answer("Только администратор.", show_alert=True)
+            return
+        pending = await service.repo.list_access_requests("pending")
+        if not pending:
+            await _edit(callback, "Новых заявок нет.", keyboards.main_menu(True))
+            await callback.answer()
+            return
+        await _edit(
+            callback,
+            f"Заявок на доступ: {len(pending)}. Карточки отправлены отдельно.",
+            keyboards.main_menu(True),
+        )
+        if callback.from_user is not None:
+            for request in pending[:20]:
+                await callback.bot.send_message(
+                    callback.from_user.id,
+                    views.admin_access_request(request["telegram_id"], request.get("username")),
+                    reply_markup=keyboards.access_decision(request["telegram_id"]),
+                )
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("access:approve:"))
+    async def cb_access_approve(callback: CallbackQuery) -> None:
+        if not _is_env_admin(settings, callback.from_user):
+            await callback.answer("Только администратор.", show_alert=True)
+            return
+        try:
+            target = int(callback.data.split(":")[2])
+        except (IndexError, ValueError):
+            await callback.answer("Некорректная заявка.", show_alert=True)
+            return
+        request = await service.repo.get_access_request(target)
+        username = request["username"] if request else None
+        admin_id = callback.from_user.id if callback.from_user else None
+        await service.repo.set_access_status(target, "approved", decided_by=admin_id)
+        operator = await service.repo.ensure_operator(target, username)
+        if not operator["is_active"]:
+            await service.repo.set_operator_active(target, True)
+        await service.repo.add_audit(
+            "access.approved",
+            actor_type="operator",
+            actor_id=admin_id,
+            detail={"telegram_id": target, "username": username},
+        )
+        try:
+            await callback.bot.send_message(target, views.access_approved())
+        except Exception:
+            log.warning("failed to notify approved user %s", target, exc_info=True)
+        await _edit(callback, f"Доступ выдан: <code>{target}</code>.")
+        await callback.answer("Доступ выдан")
+
+    @router.callback_query(F.data.startswith("access:deny:"))
+    async def cb_access_deny(callback: CallbackQuery) -> None:
+        if not _is_env_admin(settings, callback.from_user):
+            await callback.answer("Только администратор.", show_alert=True)
+            return
+        try:
+            target = int(callback.data.split(":")[2])
+        except (IndexError, ValueError):
+            await callback.answer("Некорректная заявка.", show_alert=True)
+            return
+        admin_id = callback.from_user.id if callback.from_user else None
+        await service.repo.set_access_status(target, "denied", decided_by=admin_id)
+        await service.repo.add_audit(
+            "access.denied",
+            actor_type="operator",
+            actor_id=admin_id,
+            detail={"telegram_id": target},
+        )
+        try:
+            await callback.bot.send_message(target, views.access_denied_message())
+        except Exception:
+            log.warning("failed to notify denied user %s", target, exc_info=True)
+        await _edit(callback, f"Заявка отклонена: <code>{target}</code>.")
+        await callback.answer("Заявка отклонена")
+
     @router.callback_query(F.data == "menu")
     async def cb_menu(callback: CallbackQuery) -> None:
         operator = await _authorize_callback(callback)
         if operator is None:
             return
         stats = await service.repo.stats()
-        await _edit(callback, views.main_menu(stats), keyboards.main_menu())
+        await _edit(
+            callback,
+            views.main_menu(stats),
+            keyboards.main_menu(include_requests=_is_env_admin(settings, callback.from_user)),
+        )
         await callback.answer()
 
     @router.callback_query(F.data == "devices")

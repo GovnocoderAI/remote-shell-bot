@@ -11,7 +11,7 @@ import aiosqlite
 from rsb.errors import ConfigError
 from rsb.util import ensure_private_file
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class Database:
@@ -41,12 +41,16 @@ class Database:
         await cursor.close()
         if row is None:
             await conn.execute("INSERT INTO schema_meta(version) VALUES(?)", (SCHEMA_VERSION,))
-        elif int(row[0]) != SCHEMA_VERSION:
-            await conn.close()
-            raise ConfigError(
-                f"database schema version {row[0]} is not supported "
-                f"by this build (expected {SCHEMA_VERSION})"
-            )
+        else:
+            version = int(row[0])
+            if version == 1 and SCHEMA_VERSION == 2:
+                await conn.execute("UPDATE schema_meta SET version = ?", (SCHEMA_VERSION,))
+            elif version != SCHEMA_VERSION:
+                await conn.close()
+                raise ConfigError(
+                    f"database schema version {version} is not supported "
+                    f"by this build (expected {SCHEMA_VERSION})"
+                )
         await conn.commit()
         self._conn = conn
         ensure_private_file(self.path)

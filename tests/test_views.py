@@ -43,3 +43,27 @@ def test_command_result_handles_empty_output() -> None:
         }
     )
     assert "Нет вывода" in result
+
+
+def test_new_user_welcome_contains_id_and_request_hint() -> None:
+    from rsb.server.bot import views
+
+    text = views.new_user_welcome(123456, "candidate", "@support")
+    assert "123456" in text
+    assert "/request" in text
+    assert "@support" in text
+
+
+def test_enroll_ready_contains_both_platforms() -> None:
+    from rsb.server.bot import views
+
+    text = views.enroll_ready(
+        {"Windows (PowerShell)": "powershell install", "Linux/macOS": "curl install"},
+        "2026-01-01T12:15:00+00:00",
+        "wss://support.example.com",
+        "https://example.com/install.py",
+    )
+    assert "Windows" in text
+    assert "Linux/macOS" in text
+    assert "install.py" in text
+    assert "wss://support.example.com" in text

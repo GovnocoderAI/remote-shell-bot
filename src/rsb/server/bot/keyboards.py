@@ -7,14 +7,39 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from rsb.server import policy
 
 
-def main_menu() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+def main_menu(include_requests: bool = False) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if include_requests:
+        rows.append([InlineKeyboardButton(text="Заявки на доступ", callback_data="requests")])
+    rows.extend(
+        [
             [
                 InlineKeyboardButton(text="Устройства", callback_data="devices"),
                 InlineKeyboardButton(text="Моя сессия", callback_data="session"),
             ],
             [InlineKeyboardButton(text="Журнал аудита", callback_data="audit")],
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def new_user() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Запросить доступ", callback_data="access:request")]
+        ]
+    )
+
+
+def access_decision(telegram_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Разрешить", callback_data=f"access:approve:{telegram_id}"
+                ),
+                InlineKeyboardButton(text="Отклонить", callback_data=f"access:deny:{telegram_id}"),
+            ]
         ]
     )
 

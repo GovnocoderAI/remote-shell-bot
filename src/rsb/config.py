@@ -69,6 +69,14 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    install_url: str = (
+        "https://raw.githubusercontent.com/GovnocoderAI/remote-shell-bot/main/install.py"
+    )
+    install_source_url: str = (
+        "https://github.com/GovnocoderAI/remote-shell-bot/archive/refs/heads/main.tar.gz"
+    )
+    support_contact: str = ""
+
     @field_validator(
         "database_path",
         "tls_certfile",

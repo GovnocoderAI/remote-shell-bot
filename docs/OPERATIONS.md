@@ -72,6 +72,22 @@ docker run --rm -v remotebot_rsb-data:/data -v "$PWD":/backup alpine \
 
 Для bind-mount каталога данных заранее выставьте владельца UID 10001.
 
+## Доступ операторов
+
+Первый администратор задаётся в `RSB_ADMIN_IDS`. Дальше новые пользователи
+отправляют заявку из бота, а администратор подтверждает её:
+
+```
+rsb operator list
+rsb operator list --status pending
+rsb operator approve 123456789
+rsb operator deny 123456789
+```
+
+Те же действия доступны в боте: `/requests` и кнопки «Разрешить»/«Отклонить».
+После одобрения пользователь выполняет `/start`, настраивает TOTP и получает
+команды установки агента.
+
 ## Данные
 
 SQLite лежит в `RSB_DATA_DIR/rsb.sqlite3` в режиме WAL. Резервная копия:

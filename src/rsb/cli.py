@@ -16,6 +16,8 @@ from rich.table import Table
 
 from rsb.agent.config import AgentConfig, hash_password, new_ui_token
 from rsb.config import Settings
+from rsb.db.database import Database
+from rsb.db.repository import Repository
 from rsb.errors import ConfigError, RsbError
 from rsb.logging import configure_logging
 from rsb.net.diagnostics import (
@@ -454,6 +456,103 @@ def vpn_add(
         ensure_private_file(target)
         console.print(f"Imported: {target}")
     console.print(f"Imported configs: {len(configs)}", style="green")
+
+
+operator_app = typer.Typer(
+    help="Manage operator access requests.",
+    no_args_is_help=True,
+)
+app.add_typer(operator_app, name="operator")
+
+
+async def _list_access_requests(data_dir: Path | None, status: str | None) -> list[dict]:
+    settings = Settings()
+    if data_dir:
+        settings.data_dir = data_dir
+    settings.ensure_dirs()
+    database = Database(settings.db_path)
+    await database.open()
+    try:
+        return await Repository(database).list_access_requests(status)
+    finally:
+        await database.close()
+
+
+@operator_app.command("list")
+def operator_list(
+    status: str | None = typer.Option(None, help="pending, approved or denied"),
+    data_dir: Path | None = typer.Option(None, help="Override RSB_DATA_DIR."),
+) -> None:
+    """List access requests."""
+    rows = asyncio.run(_list_access_requests(data_dir, status))
+    if not rows:
+        console.print("Заявок нет.")
+        return
+    table = Table(title="Access requests")
+    table.add_column("Telegram ID")
+    table.add_column("Username")
+    table.add_column("Status")
+    table.add_column("Created")
+    for row in rows:
+        table.add_row(
+            str(row["telegram_id"]),
+            str(row.get("username") or "-"),
+            str(row["status"]),
+            str(row["created_at"]),
+        )
+    console.print(table)
+
+
+async def _decide_access(data_dir: Path | None, telegram_id: int, status: str) -> dict | None:
+    settings = Settings()
+    if data_dir:
+        settings.data_dir = data_dir
+    settings.ensure_dirs()
+    database = Database(settings.db_path)
+    await database.open()
+    try:
+        repo = Repository(database)
+        request = await repo.get_access_request(telegram_id)
+        await repo.set_access_status(telegram_id, status, decided_by=0)
+        if status == "approved":
+            operator = await repo.ensure_operator(
+                telegram_id, request["username"] if request else None
+            )
+            if not operator["is_active"]:
+                await repo.set_operator_active(telegram_id, True)
+        await repo.add_audit(
+            f"access.{status}",
+            actor_type="cli",
+            actor_id="operator",
+            detail={"telegram_id": telegram_id},
+        )
+        return request
+    finally:
+        await database.close()
+
+
+@operator_app.command("approve")
+def operator_approve(
+    telegram_id: int = typer.Argument(..., help="Telegram user ID"),
+    data_dir: Path | None = typer.Option(None, help="Override RSB_DATA_DIR."),
+) -> None:
+    """Approve access without using the bot."""
+    request = asyncio.run(_decide_access(data_dir, telegram_id, "approved"))
+    username = request["username"] if request else None
+    console.print(
+        f"Доступ выдан: {telegram_id}" + (f" (@{username})" if username else ""),
+        style="green",
+    )
+
+
+@operator_app.command("deny")
+def operator_deny(
+    telegram_id: int = typer.Argument(..., help="Telegram user ID"),
+    data_dir: Path | None = typer.Option(None, help="Override RSB_DATA_DIR."),
+) -> None:
+    """Deny access without using the bot."""
+    asyncio.run(_decide_access(data_dir, telegram_id, "denied"))
+    console.print(f"Доступ отклонён: {telegram_id}", style="yellow")
 
 
 @app.command()

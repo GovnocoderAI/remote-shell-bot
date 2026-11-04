@@ -13,6 +13,17 @@ CREATE TABLE IF NOT EXISTS operators (
     last_seen_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS access_requests (
+    telegram_id INTEGER PRIMARY KEY,
+    username TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    decided_at TEXT,
+    decided_by INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_access_status ON access_requests(status);
+
 CREATE TABLE IF NOT EXISTS enrollment_tokens (
     token_hash TEXT PRIMARY KEY,
     label TEXT,
