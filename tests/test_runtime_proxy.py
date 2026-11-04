@@ -48,6 +48,8 @@ async def test_agent_connects_through_local_proxy(tmp_path) -> None:
         secret_key="runtime-proxy-secret-key-material-0123456789",
         admin_ids="100",
         public_url=f"ws://127.0.0.1:{relay_port}",
+        bot_token="",
+        telegram_proxy="",
     )
     app = create_app(settings)
     server = uvicorn.Server(

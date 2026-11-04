@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from aiogram import Bot
@@ -15,12 +16,24 @@ class TelegramNotifier:
         self.bot = bot
 
     async def _send(self, operator_id: int, text: str, markup=None) -> None:
+        task = asyncio.create_task(self._send_now(operator_id, text, markup))
+        task.add_done_callback(self._log_failure)
+
+    async def _send_now(self, operator_id: int, text: str, markup=None) -> None:
         try:
             await self.bot.send_message(
                 operator_id, text, reply_markup=markup, disable_web_page_preview=True
             )
         except Exception:
             log.warning("failed to notify operator %s", operator_id, exc_info=True)
+
+    @staticmethod
+    def _log_failure(task: asyncio.Task[None]) -> None:
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error is not None:
+            log.warning("notification task failed: %s", error)
 
     async def session_active(self, operator_id: int, session: dict, device: dict) -> None:
         text = views.session_activated(session, device, None)
@@ -61,6 +74,17 @@ class TelegramNotifier:
         )
 
     async def screenshot(
+        self,
+        operator_id: int,
+        session: dict,
+        device: dict,
+        image: bytes,
+        meta: dict,
+    ) -> None:
+        task = asyncio.create_task(self._send_photo_now(operator_id, session, device, image, meta))
+        task.add_done_callback(self._log_failure)
+
+    async def _send_photo_now(
         self,
         operator_id: int,
         session: dict,
