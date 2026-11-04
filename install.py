@@ -14,6 +14,7 @@ import os
 import platform
 import secrets
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -128,6 +129,60 @@ def create_environment(install_dir: Path, base_python: str, source_root: Path) -
     return python
 
 
+def _is_wsl() -> bool:
+    if os.environ.get("WSL_DISTRO_NAME"):
+        return True
+    try:
+        return "microsoft" in Path("/proc/version").read_text(encoding="utf-8").lower()
+    except OSError:
+        return False
+
+
+def _default_gateway() -> str | None:
+    try:
+        result = subprocess.run(
+            ["ip", "route", "show", "default"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    parts = result.stdout.split()
+    if "via" in parts and parts.index("via") + 1 < len(parts):
+        return parts[parts.index("via") + 1]
+    return None
+
+
+def _can_connect(host: str, port: int, wait_seconds: float = 2.0) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=wait_seconds):
+            return True
+    except OSError:
+        return False
+
+
+def normalize_relay_for_wsl(relay: str) -> str:
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(relay)
+    if parts.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        return relay
+    port = parts.port or (443 if parts.scheme == "wss" else 80)
+    if _can_connect(parts.hostname, port):
+        return relay
+    if not _is_wsl():
+        return relay
+    gateway = _default_gateway()
+    if not gateway or not _can_connect(gateway, port):
+        return relay
+    rewritten = urlunsplit(
+        (parts.scheme, f"{gateway}:{port}", parts.path, parts.query, parts.fragment)
+    )
+    print(f"WSL: relay rewritten to {rewritten}")
+    return rewritten
+
+
 def enroll_device(
     python: Path,
     relay: str,
@@ -139,6 +194,7 @@ def enroll_device(
     force: bool,
 ) -> dict:
     config_path = data_dir / "agent.json"
+    relay = normalize_relay_for_wsl(relay)
     command = [
         str(python),
         "-m",

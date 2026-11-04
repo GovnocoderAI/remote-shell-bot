@@ -37,3 +37,23 @@ def test_ensure_project_source_reuses_local_tree(tmp_path: Path) -> None:
     project.mkdir()
     (project / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     assert ensure_project_source(project, "ignored", tmp_path / "work") == project
+
+
+def test_wsl_relay_rewrite(monkeypatch) -> None:
+    import install
+
+    monkeypatch.setattr(install, "_is_wsl", lambda: True)
+    monkeypatch.setattr(install, "_default_gateway", lambda: "172.20.160.1")
+    monkeypatch.setattr(
+        install, "_can_connect", lambda host, port, wait_seconds=2.0: host == "172.20.160.1"
+    )
+    assert install.normalize_relay_for_wsl("ws://127.0.0.1:30000") == ("ws://172.20.160.1:30000")
+
+
+def test_non_loopback_relay_is_not_rewritten(monkeypatch) -> None:
+    import install
+
+    monkeypatch.setattr(install, "_is_wsl", lambda: True)
+    assert install.normalize_relay_for_wsl("wss://support.example.com") == (
+        "wss://support.example.com"
+    )

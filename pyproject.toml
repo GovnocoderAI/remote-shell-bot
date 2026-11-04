@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "remote-shell-bot"
-version = "0.2.1"
+version = "0.2.2"
 description = "Consent-based remote shell and desktop support over Telegram"
 readme = "README.md"
 requires-python = ">=3.11"
