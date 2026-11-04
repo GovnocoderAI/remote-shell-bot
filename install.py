@@ -106,11 +106,11 @@ def enroll_device(
 def write_launcher(install_dir: Path, python: Path, data_dir: Path) -> Path:
     if platform.system() == "Windows":
         launcher = install_dir / "rsb-agent.cmd"
-        content = f'@echo off\r\n"{python}" -m rsb agent --data-dir "{data_dir}"\r\n'
+        content = f'@echo off\r\n"{python}" -m rsb connect --data-dir "{data_dir}"\r\n'
         launcher.write_text(content, encoding="utf-8")
         return launcher
     launcher = install_dir / "rsb-agent.sh"
-    content = f'#!/bin/sh\nexec "{python}" -m rsb agent --data-dir "{data_dir}"\n'
+    content = f'#!/bin/sh\nexec "{python}" -m rsb connect --data-dir "{data_dir}"\n'
     launcher.write_text(content, encoding="utf-8")
     os.chmod(launcher, 0o700)
     return launcher
@@ -177,7 +177,7 @@ def install_service(launcher: Path, install_dir: Path, data_dir: Path) -> bool:
             "After=network-online.target\n\n"
             "[Service]\n"
             "Type=simple\n"
-            f'ExecStart="{venv_python(install_dir)}" -m rsb agent '
+            f'ExecStart="{venv_python(install_dir)}" -m rsb connect '
             f'--data-dir "{data_dir}"\n'
             "Restart=always\n"
             "RestartSec=5\n"

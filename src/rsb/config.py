@@ -46,6 +46,18 @@ class Settings(BaseSettings):
     agent_ui_port: int = Field(default=8765, ge=1, le=65535)
     agent_lock_timeout_seconds: int = Field(default=900, ge=60)
 
+    agent_proxy: str = ""
+    telegram_proxy: str = ""
+    proxy_file: Path | None = None
+    proxy_timeout_seconds: float = Field(default=4.0, ge=0.5, le=60.0)
+    proxy_concurrency: int = Field(default=20, ge=1, le=100)
+    public_proxy_max_test: int = Field(default=200, ge=1, le=1000)
+    proxy_cache_ttl_seconds: int = Field(default=1800, ge=60)
+    public_proxy_sources: str = ""
+    vpn_dir: Path | None = None
+    vpn_sources_file: Path | None = None
+    vpn_sources: str = ""
+
     session_ttl_seconds: int = Field(default=1800, ge=60)
     session_request_ttl_seconds: int = Field(default=180, ge=30)
     operator_auth_ttl_seconds: int = Field(default=28800, ge=300)
@@ -57,7 +69,15 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
-    @field_validator("database_path", "tls_certfile", "tls_keyfile", mode="before")
+    @field_validator(
+        "database_path",
+        "tls_certfile",
+        "tls_keyfile",
+        "proxy_file",
+        "vpn_dir",
+        "vpn_sources_file",
+        mode="before",
+    )
     @classmethod
     def _blank_to_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():
@@ -76,6 +96,32 @@ class Settings(BaseSettings):
     @property
     def db_path(self) -> Path:
         return self.database_path or (self.data_dir / "rsb.sqlite3")
+
+    @property
+    def resolved_proxy_file(self) -> Path:
+        return self.proxy_file or (self.data_dir / "proxies.txt")
+
+    @property
+    def proxy_cache_path(self) -> Path:
+        return self.data_dir / "proxy_cache.json"
+
+    @property
+    def resolved_vpn_dir(self) -> Path:
+        return self.vpn_dir or (self.data_dir / "vpn")
+
+    @property
+    def resolved_vpn_sources_file(self) -> Path:
+        return self.vpn_sources_file or (self.data_dir / "vpn_sources.txt")
+
+    @property
+    def public_source_urls(self) -> list[str]:
+        raw = self.public_proxy_sources.replace("\n", ",")
+        return [item.strip() for item in raw.split(",") if item.strip()]
+
+    @property
+    def vpn_source_urls(self) -> list[str]:
+        raw = self.vpn_sources.replace("\n", ",")
+        return [item.strip() for item in raw.split(",") if item.strip()]
 
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -109,7 +155,20 @@ class Settings(BaseSettings):
             raise ConfigError("RSB_PUBLIC_URL is not set")
         if bool(self.tls_certfile) != bool(self.tls_keyfile):
             raise ConfigError("RSB_TLS_CERTFILE and RSB_TLS_KEYFILE must be set together")
+        self._validate_proxy(self.telegram_proxy, "RSB_TELEGRAM_PROXY")
 
     def validate_for_agent(self) -> None:
         if not self.public_url.strip():
             raise ConfigError("RSB_PUBLIC_URL is not set")
+        self._validate_proxy(self.agent_proxy, "RSB_AGENT_PROXY")
+
+    @staticmethod
+    def _validate_proxy(value: str, label: str) -> None:
+        if not value.strip():
+            return
+        from rsb.net.proxy import ProxyFormatError, normalize_proxy
+
+        try:
+            normalize_proxy(value)
+        except ProxyFormatError as exc:
+            raise ConfigError(f"{label} is invalid: {exc}") from exc

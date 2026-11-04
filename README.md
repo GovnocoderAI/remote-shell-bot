@@ -26,6 +26,9 @@ RemoteShellBot — средство удалённой поддержки с я�
 - Одноразовая учётная запись на каждую сессию с TTL.
 - Полный журнал аудита на сервере и локальный журнал на хосте.
 - Кроссплатформенность: Windows, Linux, macOS.
+- Устойчивое подключение: прямое, через настроенный прокси, публичные списки
+  прокси с GitHub и WireGuard по явному флагу.
+- Диагностика сети: `rsb netcheck`.
 
 ## Чего в проекте нет
 
@@ -60,7 +63,7 @@ RemoteShellBot — средство удалённой поддержки с я�
 
 Подробности: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [docs/SECURITY.md](docs/SECURITY.md), [docs/PROTOCOL.md](docs/PROTOCOL.md),
-[docs/OPERATIONS.md](docs/OPERATIONS.md).
+[docs/OPERATIONS.md](docs/OPERATIONS.md), [docs/NETWORKING.md](docs/NETWORKING.md).
 
 ## Структура репозитория
 
@@ -69,6 +72,8 @@ remoteBot/
 ├── install.py               установщик агента
 ├── pyproject.toml
 ├── .env.example
+├── proxies.example.txt
+├── vpn_sources.example.txt
 ├── CONTRIBUTING.md
 ├── CHANGELOG.md
 ├── .github/workflows/ci.yml
@@ -77,15 +82,17 @@ remoteBot/
 │   └── rsb-server.service
 ├── docs/
 │   ├── ARCHITECTURE.md
+│   ├── NETWORKING.md
 │   ├── OPERATIONS.md
 │   ├── PROTOCOL.md
 │   └── SECURITY.md
 ├── src/rsb/
-│   ├── cli.py               rsb server | agent | enroll | doctor
+│   ├── cli.py               server | agent | connect | netcheck | vpn | enroll
 │   ├── config.py            настройки сервера и общие параметры
 │   ├── protocol.py          конверт сообщений и лимиты
 │   ├── security.py          токены, HMAC, TOTP, шифрование секретов
 │   ├── db/                  схема, подключение, репозиторий
+│   ├── net/                 прокси, диагностика, публичные списки, VPN
 │   ├── server/              relay, hub, сессии, бот
 │   └── agent/               клиент, исполнитель, снимки, локальная панель
 └── tests/                   unit- и сквозные тесты
@@ -149,6 +156,22 @@ http://127.0.0.1:8765/?token=<UI_TOKEN>
 
 Права, выданные оператору, сохраняются в истории доступа устройства.
 Каждое новое подключение всё равно требует подтверждения владельца машины.
+
+### Сеть и прокси
+
+```
+rsb netcheck
+rsb connect
+rsb connect --proxy socks5://127.0.0.1:1080
+rsb connect --no-public-proxies
+rsb connect --vpn --vpn-public
+```
+
+`rsb connect` сначала пробует прямое соединение, затем настроенные прокси,
+переменные окружения, `proxies.txt`, кэш и публичные списки с GitHub.
+Публичные списки можно отключить флагом `--no-public-proxies`.
+WireGuard подключается только по явному `--vpn`, потому что требует прав
+администратора. Подробности: [docs/NETWORKING.md](docs/NETWORKING.md).
 
 Одна активная сессия на оператора. Сессия автоматически истекает по TTL,
 при отключении агента и при закрытии со стороны хоста.

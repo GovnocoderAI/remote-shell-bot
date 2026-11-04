@@ -9,14 +9,16 @@ from typing import Any
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from rsb.config import Settings
 from rsb.db.database import Database
-from rsb.errors import DeviceOfflineError, ProtocolError, RsbError
+from rsb.errors import ConfigError, DeviceOfflineError, ProtocolError, RsbError
 from rsb.logging import configure_logging
+from rsb.net.proxy import ProxyFormatError, normalize_proxy, redact_proxy
 from rsb.protocol import Msg, decode, encode
 from rsb.server.bot import build_router
 from rsb.server.bot.notifier import TelegramNotifier
@@ -74,7 +76,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         polling: asyncio.Task[None] | None = None
         token = current.bot_token.get_secret_value().strip()
         if token:
-            bot = Bot(token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+            session = None
+            telegram_proxy = current.telegram_proxy.strip()
+            if telegram_proxy:
+                try:
+                    telegram_proxy = normalize_proxy(telegram_proxy)
+                except ProxyFormatError as exc:
+                    raise ConfigError(f"RSB_TELEGRAM_PROXY is invalid: {exc}") from exc
+                session = AiohttpSession(proxy=telegram_proxy)
+                log.info("telegram proxy enabled: %s", redact_proxy(telegram_proxy))
+            bot = Bot(
+                token,
+                session=session,
+                default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+            )
             dispatcher = Dispatcher()
             dispatcher.include_router(build_router(service, current))
             service.notifier = TelegramNotifier(bot)
@@ -145,6 +160,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 timestamp=int(payload["timestamp"]),
                 signature=str(payload["signature"]),
             )
+        except WebSocketDisconnect:
+            return
         except (TimeoutError, KeyError, TypeError, ValueError, ProtocolError, RsbError) as exc:
             log.warning("handshake rejected: %s", exc)
             with contextlib.suppress(Exception):

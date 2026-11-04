@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import getpass
+import json
 import platform
 import secrets
 import sys
@@ -10,14 +11,30 @@ from pathlib import Path
 import httpx
 import typer
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 
 from rsb.agent.config import AgentConfig, hash_password, new_ui_token
 from rsb.config import Settings
 from rsb.errors import ConfigError, RsbError
 from rsb.logging import configure_logging
+from rsb.net.diagnostics import (
+    detect_vpn_interfaces,
+    relay_health_url,
+    run_diagnostics,
+)
+from rsb.net.pool import select_proxy
+from rsb.net.proxy import ProxyFormatError, normalize_proxy, redact_proxy
+from rsb.net.vpn import (
+    ensure_vpn,
+    is_admin,
+    parse_wireguard_configs,
+    read_local_configs,
+    read_source_urls,
+    wireguard_binary,
+)
 from rsb.protocol import MAX_FRAME_BYTES
-from rsb.util import http_base, relay_endpoint
+from rsb.util import ensure_private_file, http_base, relay_endpoint
 
 app = typer.Typer(
     help="RemoteShellBot server, host agent and enrollment utility.",
@@ -91,10 +108,15 @@ def agent(
     path = config or (settings.data_dir / "agent.json")
     try:
         configuration = AgentConfig.load(path)
+        settings.validate_for_agent()
     except ConfigError as exc:
         console.print(str(exc), style="red")
         raise typer.Exit(code=2) from exc
-    runtime = AgentRuntime(settings, configuration, path)
+    try:
+        runtime = AgentRuntime(settings, configuration, path)
+    except ConfigError as exc:
+        console.print(str(exc), style="red")
+        raise typer.Exit(code=2) from exc
     console.print(f"Device: {configuration.name} ({configuration.device_id})")
     console.print(f"Local panel: {runtime.ui_url}")
     try:
@@ -104,6 +126,183 @@ def agent(
     except RsbError as exc:
         console.print(str(exc), style="red")
         raise typer.Exit(code=1) from exc
+
+
+@app.command()
+def connect(
+    config: Path | None = typer.Option(None, help="Path to agent.json."),
+    data_dir: Path | None = typer.Option(None, help="Override RSB_DATA_DIR."),
+    open_ui: bool = typer.Option(False, "--open-ui", help="Open the panel in a browser."),
+    proxy: list[str] = typer.Option([], "--proxy", help="Proxy URL; repeatable."),
+    proxy_file: Path | None = typer.Option(None, help="File with one proxy per line."),
+    no_direct: bool = typer.Option(False, "--no-direct", help="Skip direct connection."),
+    no_public: bool = typer.Option(
+        False, "--no-public-proxies", help="Do not use public proxy lists."
+    ),
+    wait_seconds: float = typer.Option(4.0, "--timeout", min=1.0, max=60.0),
+    vpn: bool = typer.Option(False, "--vpn", help="Try WireGuard before proxies."),
+    vpn_public: bool = typer.Option(
+        False, "--vpn-public", help="Fetch VPN configs from configured sources."
+    ),
+    require_vpn: bool = typer.Option(
+        False, "--require-vpn", help="Abort if VPN cannot be established."
+    ),
+) -> None:
+    """Connect the agent, falling back to proxies, VPN and public lists."""
+    from rsb.agent.runtime import AgentRuntime
+
+    settings = Settings()
+    if data_dir:
+        settings.data_dir = data_dir
+    configure_logging(settings.log_level)
+    path = config or (settings.data_dir / "agent.json")
+    try:
+        configuration = AgentConfig.load(path)
+        settings.validate_for_agent()
+    except ConfigError as exc:
+        console.print(str(exc), style="red")
+        raise typer.Exit(code=2) from exc
+    explicit: list[str] = []
+    for value in proxy:
+        try:
+            explicit.append(normalize_proxy(value))
+        except ProxyFormatError as exc:
+            console.print(f"Invalid --proxy value: {exc}", style="red")
+            raise typer.Exit(code=2) from exc
+    health_url = relay_health_url(configuration.relay_url)
+    candidates_file = proxy_file or settings.resolved_proxy_file
+
+    async def runner() -> None:
+        vpn_session = None
+        try:
+            if vpn:
+                vpn_session = await ensure_vpn(
+                    settings,
+                    health_url,
+                    allow_public=vpn_public,
+                    wait_seconds=wait_seconds,
+                )
+                style = "green" if vpn_session.connected else "yellow"
+                console.print(f"VPN: {vpn_session.detail}", style=style)
+                for warning in vpn_session.warnings:
+                    console.print(f"Внимание: {warning}", style="yellow")
+                if require_vpn and not vpn_session.connected:
+                    raise ConfigError("VPN обязателен, но подключить его не удалось")
+            selection = await select_proxy(
+                health_url,
+                explicit=explicit,
+                proxy_file=candidates_file,
+                allow_direct=not no_direct,
+                allow_public=not no_public,
+                relay_url=configuration.relay_url,
+                wait_seconds=wait_seconds,
+                concurrency=settings.proxy_concurrency,
+                max_test=settings.public_proxy_max_test,
+                cache_path=settings.proxy_cache_path,
+                cache_ttl=settings.proxy_cache_ttl_seconds,
+                extra_source_urls=settings.public_source_urls,
+            )
+            if selection.source == "direct":
+                console.print("Канал: прямое подключение", style="green")
+            else:
+                console.print(
+                    "Канал: "
+                    f"{redact_proxy(selection.proxy or '')} "
+                    f"({selection.source}, проверено: {selection.tested})",
+                    style="green",
+                )
+            for warning in selection.warnings:
+                console.print(f"Внимание: {warning}", style="yellow")
+            runtime = AgentRuntime(
+                settings,
+                configuration,
+                path,
+                proxy_resolver=selection.resolver,
+            )
+            console.print(f"Device: {configuration.name} ({configuration.device_id})")
+            console.print(f"Local panel: {runtime.ui_url}")
+            await runtime.run(open_ui=open_ui)
+        finally:
+            if vpn_session is not None:
+                await vpn_session.close()
+
+    try:
+        asyncio.run(runner())
+    except KeyboardInterrupt:
+        console.print("Agent stopped.")
+    except RsbError as exc:
+        console.print(str(exc), style="red")
+        console.print(
+            f"Подсказка: добавьте рабочий прокси в {candidates_file} или запустите rsb netcheck.",
+            style="yellow",
+        )
+        raise typer.Exit(code=1) from exc
+
+
+@app.command()
+def netcheck(
+    relay: str | None = typer.Option(None, help="Relay URL; defaults to RSB_PUBLIC_URL."),
+    proxy: str | None = typer.Option(
+        None, "--proxy", envvar="RSB_AGENT_PROXY", help="Check a specific proxy."
+    ),
+    wait_seconds: float = typer.Option(6.0, "--timeout", min=1.0, max=120.0),
+    telegram: bool = typer.Option(True, "--telegram/--no-telegram"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """Diagnose connectivity to the relay, Telegram and proxies."""
+    settings = Settings()
+    target = relay or settings.public_url
+    proxy_value = (proxy or settings.agent_proxy or "").strip() or None
+    if proxy_value:
+        try:
+            proxy_value = normalize_proxy(proxy_value)
+        except ProxyFormatError as exc:
+            console.print(f"Invalid proxy: {exc}", style="red")
+            raise typer.Exit(code=2) from exc
+    report = asyncio.run(
+        run_diagnostics(
+            target,
+            proxy=proxy_value,
+            wait_seconds=wait_seconds,
+            include_telegram=telegram,
+        )
+    )
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+        raise typer.Exit(code=0 if report.relay_ok else 1)
+    table = Table(title="RemoteShellBot connectivity")
+    table.add_column("Проверка")
+    table.add_column("Статус")
+    table.add_column("Детали", overflow="fold")
+    table.add_column("мс", justify="right")
+    for item in report.results:
+        table.add_row(
+            item.name,
+            "[green]ok[/green]" if item.ok else "[red]fail[/red]",
+            item.detail,
+            f"{item.latency_ms:.0f}" if item.latency_ms is not None else "",
+        )
+    console.print(table)
+    if report.proxies:
+        console.print(
+            "Системные прокси: "
+            + ", ".join(f"{name}={value}" for name, value in report.proxies.items())
+        )
+    if report.vpn_interfaces:
+        console.print("VPN-интерфейсы: " + ", ".join(report.vpn_interfaces))
+    console.print(Panel(report.verdict, title="Вердикт"))
+    if not report.relay_ok:
+        console.print(
+            "Подсказка: rsb connect попробует прокси из окружения, proxies.txt и публичные списки.",
+            style="yellow",
+        )
+    telegram_result = report.result("telegram.api")
+    if telegram_result is not None and not telegram_result.ok:
+        console.print(
+            "Telegram API недоступен. Для сервера задайте RSB_TELEGRAM_PROXY.",
+            style="yellow",
+        )
+    raise typer.Exit(code=0 if report.relay_ok else 1)
 
 
 @app.command()
@@ -182,7 +381,67 @@ def enroll(
     console.print(f"Enrolled as {device_name}", style="green")
     console.print(f"Configuration: {path}")
     console.print(f"Local panel: http://127.0.0.1:{ui_port}/?token={configuration.ui_token}")
-    console.print("Run: rsb agent")
+    console.print("Run: rsb connect")
+
+
+vpn_app = typer.Typer(
+    help="WireGuard status and local configuration helpers.",
+    no_args_is_help=True,
+)
+app.add_typer(vpn_app, name="vpn")
+
+
+@vpn_app.command("status")
+def vpn_status(
+    data_dir: Path | None = typer.Option(None, help="Override RSB_DATA_DIR."),
+) -> None:
+    """Show VPN interfaces, WireGuard availability and local configs."""
+    settings = Settings()
+    if data_dir:
+        settings.data_dir = data_dir
+    adapters = detect_vpn_interfaces()
+    binary = wireguard_binary()
+    configs = read_local_configs(settings.resolved_vpn_dir)
+    urls = read_source_urls(settings.resolved_vpn_sources_file) + settings.vpn_source_urls
+    table = Table(title="RemoteShellBot VPN")
+    table.add_column("Параметр")
+    table.add_column("Значение", overflow="fold")
+    table.add_row("WireGuard", binary or "не найден")
+    table.add_row("Права администратора", "да" if is_admin() else "нет")
+    table.add_row("Активные VPN", ", ".join(adapters) if adapters else "нет")
+    table.add_row("Каталог конфигов", str(settings.resolved_vpn_dir))
+    table.add_row("Локальные конфиги", str(len(configs)))
+    table.add_row("Публичные источники", str(len(urls)))
+    table.add_row("Файл источников", str(settings.resolved_vpn_sources_file))
+    console.print(table)
+
+
+@vpn_app.command("add")
+def vpn_add(
+    path: Path = typer.Argument(..., exists=True, dir_okay=False),
+    data_dir: Path | None = typer.Option(None, help="Override RSB_DATA_DIR."),
+) -> None:
+    """Import one or more WireGuard configs into the local directory."""
+    settings = Settings()
+    if data_dir:
+        settings.data_dir = data_dir
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        console.print(f"Cannot read {path}: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+    configs = parse_wireguard_configs(text, prefix=path.stem)
+    if not configs:
+        console.print("No valid WireGuard [Interface]/[Peer] blocks found.", style="red")
+        raise typer.Exit(code=1)
+    directory = settings.resolved_vpn_dir
+    directory.mkdir(parents=True, exist_ok=True)
+    for config in configs:
+        target = directory / f"{config.name}.conf"
+        target.write_text(config.text, encoding="utf-8")
+        ensure_private_file(target)
+        console.print(f"Imported: {target}")
+    console.print(f"Imported configs: {len(configs)}", style="green")
 
 
 @app.command()

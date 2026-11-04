@@ -124,7 +124,7 @@
 
   .stats {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: 12px;
     margin-bottom: 18px;
   }
@@ -621,6 +621,7 @@
           <dl class="facts">
             <dt>Hostname</dt><dd id="factHostname">—</dd>
             <dt>Система</dt><dd id="factOs">—</dd>
+            <dt>Канал</dt><dd id="factProxy">—</dd>
             <dt>ID</dt>
             <dd class="id-row"><code id="factId">—</code><button id="copyId" class="btn mini ghost" type="button">Копировать</button></dd>
           </dl>
@@ -778,7 +779,8 @@
       ["Relay", state.connected ? "подключён" : "нет связи", state.connected ? "ok" : "bad"],
       ["Активные сессии", String(state.sessions.length), ""],
       ["Ожидают решения", String(state.pending.length), state.pending.length ? "warn" : ""],
-      ["Права устройства", capsText(state.device.capabilities), ""]
+      ["Права устройства", capsText(state.device.capabilities), ""],
+      ["Канал", state.proxy || "direct", state.connected ? (state.proxy && state.proxy !== "direct" ? "warn" : "") : "bad"]
     ];
     entries.forEach(([label, value, tone]) => {
       const card = el("div", "stat");
@@ -1090,6 +1092,7 @@
       .filter(Boolean).join(" · ") || "Локальная панель хоста";
     $("factHostname").textContent = state.device.hostname || "—";
     $("factOs").textContent = state.device.os_name || "—";
+    $("factProxy").textContent = state.proxy || "direct";
     $("factId").textContent = state.device.id || "—";
 
     const conn = $("connBadge");

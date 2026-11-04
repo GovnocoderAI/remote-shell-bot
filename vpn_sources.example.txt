@@ -1,0 +1,7 @@
+# URLs that return WireGuard configs in text format.
+# One URL per line. Lines starting with # are ignored.
+#
+# Supported content: one or more blocks with [Interface] and [Peer].
+# Public VPN endpoints are untrusted. Use sources you trust.
+#
+# https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<file>.conf

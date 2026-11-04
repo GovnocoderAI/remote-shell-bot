@@ -1,0 +1,7 @@
+# One proxy per line. Lines starting with # are ignored.
+# Port is required.
+#
+# http://user:password@proxy.example.com:8080
+# https://proxy.example.com:8443
+# socks5://proxy.example.com:1080
+# socks5h://proxy.example.com:1080

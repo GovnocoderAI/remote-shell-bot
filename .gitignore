@@ -17,6 +17,10 @@ data/
 logs/
 agent.json
 secret.key
+proxies.txt
+vpn_sources.txt
+proxy_cache.json
+vpn_runtime/
 *.log
 .DS_Store
 Thumbs.db

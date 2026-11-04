@@ -24,8 +24,17 @@ from rsb.config import Settings
 from rsb.errors import (
     AgentError,
     AuthenticationError,
+    ConfigError,
     DeviceOfflineError,
     NotFoundError,
+)
+from rsb.net.pool import ProxyResolver, StaticResolver
+from rsb.net.proxy import (
+    ProxyFormatError,
+    from_env,
+    normalize_proxy,
+    redact_proxy,
+    validate_relay_transport,
 )
 from rsb.protocol import MAX_FRAME_BYTES, Envelope, Msg, decode
 from rsb.security import device_message, sign
@@ -77,10 +86,25 @@ class AgentRuntime:
         settings: Settings,
         config: AgentConfig,
         config_path: Path,
+        proxy_resolver: ProxyResolver | None = None,
     ) -> None:
         self.settings = settings
         self.config = config
         self.config_path = config_path
+        if proxy_resolver is not None:
+            self._resolver: ProxyResolver = proxy_resolver
+        else:
+            configured = settings.agent_proxy.strip()
+            if configured:
+                try:
+                    configured = normalize_proxy(configured)
+                except ProxyFormatError as exc:
+                    raise ConfigError(f"invalid agent proxy: {exc}") from exc
+            else:
+                environment = from_env()
+                configured = environment[0].url if environment else ""
+            self._resolver = StaticResolver(configured or None)
+        self._current_proxy: str | None = None
         self.runner = ShellRunner(
             max_output_bytes=settings.command_max_output_bytes,
             timeout_seconds=settings.command_timeout_seconds,
@@ -174,15 +198,21 @@ class AgentRuntime:
         while True:
             try:
                 await self._connect_and_serve()
+                self._resolver.report_failure(self._current_proxy)
                 delay = 1.0
             except asyncio.CancelledError:
                 raise
+            except ConfigError as exc:
+                log.error("proxy configuration rejected: %s", exc)
+                self._log_event("relay.config_error", str(exc))
+                return
             except AuthenticationError as exc:
                 log.error("relay rejected device credentials: %s", exc)
                 self._log_event("relay.auth_failed", str(exc))
                 return
             except Exception as exc:
                 log.warning("relay connection lost: %s", exc)
+                self._resolver.report_failure(self._current_proxy)
             self.connected = False
             self._socket = None
             self._reset_sessions("relay_disconnected")
@@ -191,8 +221,17 @@ class AgentRuntime:
 
     async def _connect_and_serve(self) -> None:
         endpoint = relay_endpoint(self.config.relay_url).rstrip("/") + "/agent"
+        proxy = await self._resolver.next_proxy()
+        self._current_proxy = proxy
+        validate_relay_transport(self.config.relay_url, proxy)
+        if proxy:
+            log.info("connecting to relay via proxy %s", redact_proxy(proxy))
+            self._log_event("relay.proxy", redact_proxy(proxy))
+        else:
+            log.info("connecting to relay directly")
         async with websockets.connect(
             endpoint,
+            proxy=proxy,
             max_size=MAX_FRAME_BYTES,
             ping_interval=20,
             ping_timeout=20,
@@ -225,6 +264,7 @@ class AgentRuntime:
             if response.type != Msg.HELLO_OK:
                 raise AgentError(f"unexpected handshake response {response.type}")
             self._apply_hello(response.payload)
+            self._resolver.report_success(proxy)
             heartbeat = asyncio.create_task(self._heartbeat(socket))
             try:
                 async for frame in socket:
@@ -461,6 +501,7 @@ class AgentRuntime:
             },
             "connected": self.connected,
             "locked": not self.unlocked,
+            "proxy": self._resolver.display,
             "lock_timeout": self.settings.agent_lock_timeout_seconds,
             "pending": pending,
             "sessions": sessions,
